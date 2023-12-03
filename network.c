@@ -2,6 +2,8 @@
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <syslog.h>
@@ -18,6 +20,11 @@ int send_msg(int msgtype, ...)
     int len;
     unsigned char reason;
 
+    if (remote_addr.sin_addr.s_addr == 0)
+    {
+        syslog(LOG_ERR, "Remote address is not set");
+        return -1;
+    }
     // todo: encrypt magic with nonce
     memcpy(sendbuf, &magic, sizeof(magic));
     datalen += sizeof(magic);
@@ -55,7 +62,7 @@ int send_msg(int msgtype, ...)
             // ...
             break;
         default:
-            syslog(LOG_ERR, "Unknown message type: %d\n", msgtype);
+            syslog(LOG_INFO, "Unknown message type: %d\n", msgtype);
             break;
     }
     va_end(ap);
@@ -70,11 +77,11 @@ int open_socket(short local_port)
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
-        syslog(LOG_ERR, "socket() failed: %m\n");
+        syslog(LOG_ERR, "socket() failed: %s", strerror(errno));
         return -1;
     }
     if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
-        syslog(LOG_ERR, "setsockopt() failed: %m\n");
+        syslog(LOG_ERR, "setsockopt() failed: %s", strerror(errno));
         return -1;
     }
     memset(&addr, 0, sizeof(addr));
@@ -82,7 +89,7 @@ int open_socket(short local_port)
     addr.sin_port = htons(local_port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        syslog(LOG_ERR, "bind() failed: %m\n");
+        syslog(LOG_ERR, "bind() failed: %s", strerror(errno));
         return -1;
     }
     return fd;
@@ -147,15 +154,14 @@ int receive_data(uint16_t seq, unsigned char *data, int len)
     return 1;
 }
 
-int read_msg(void)
+int read_msg(int *msgtype_p)
 {
     unsigned char databuf[MTU];
 	struct sockaddr_in remote;
     uint32_t magic;
-    int msgtype;
     uint32_t nonce;
     uint16_t seq;
-    int len, n;
+    int len, n, rc, msgtype;
     unsigned char reason;
     unsigned int sl;
 
@@ -164,14 +170,18 @@ int read_msg(void)
     n = recvfrom(socket_fd, databuf, sizeof(databuf), 0, (struct sockaddr *)&remote, &sl);
     if (n == -1)
         return -1;
-    memcpy(&remote_addr, &remote, sizeof(remote_addr));
     magic = ntohl(*(uint32_t *)databuf);
     nonce = ntohl(*(uint32_t *)(databuf + sizeof(magic)));
     // todo: decrypt magic with nonce
     // todo: check if nonce is unique to prevent replay attacks (but allow reordered packets)
+    memcpy(&remote_addr, &remote, sizeof(remote_addr));
     msgtype = magic - key;
+    rc = 1;
     switch (msgtype) {
         case MSGTYPE_INIT:
+            send_msg(MSGTYPE_INIT2);
+            break;
+        case MSGTYPE_INIT2:
             break;
         case MSGTYPE_DATA:
             seq = ntohs(*(uint16_t *)(databuf + sizeof(magic) + sizeof(nonce)));
@@ -193,16 +203,73 @@ int read_msg(void)
             // ...
             break;
         default:
-            syslog(LOG_ERR, "Unknown message type ignored: %u\n", msgtype);
+            syslog(LOG_INFO, "Unknown message type ignored: %u\n", msgtype);
+            rc = 0;
             break;
     }
-    return 1;
+    if (rc > 0 && msgtype_p != NULL)
+        *msgtype_p = msgtype;
+    return rc;
 }
 
 int init_connection(void)
 {
-    // todo: send init message (if remote_addr is known) and wait for response
-    // exit if no response is received within a certain time
+    /* send MSGTIME_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
+    /* Answer MSGTYPE_INIT2 on all MSGTYPE_INIT during init stage */
+    time_t start = time(NULL);
+
+    if (remote_addr.sin_addr.s_addr) {
+        if (send_msg(MSGTYPE_INIT) < 0)
+            return -1;
+    }
+    while (1)
+    {
+        fd_set fd_in, fd_out;
+        struct timeval tm;
+        int r, maxfd;
+        time_t curtime;
+
+        FD_ZERO(&fd_in);
+        FD_ZERO(&fd_out);
+        maxfd = socket_fd+1;
+        FD_SET(socket_fd, &fd_in);
+        tm.tv_sec = 0;
+        tm.tv_usec = RESEND_INIT * 1000;
+        r = select(maxfd, &fd_in, &fd_out, NULL, &tm);
+        if (r < 0)
+        {
+            syslog(LOG_ERR, "select() failed: %s", strerror(errno));
+            return -1;
+        }
+        if (r == 0)
+        {
+            curtime = time(NULL);
+            if (curtime - start > TIMEOUT_INIT)
+            {
+                syslog(LOG_ERR, "Timeout waiting for connection\n");
+                return -1;
+            }
+            if (remote_addr.sin_addr.s_addr)
+            {
+                if (send_msg(MSGTYPE_INIT) < 0)
+                    return -1;
+            }
+            continue;
+        }
+        if (FD_ISSET(socket_fd, &fd_in))
+        {
+            int msgtype;
+            int n = read_msg(&msgtype);
+            if (n < 0)
+                return -1;
+            if (n == 0)
+                continue;
+            if (msgtype == MSGTYPE_INIT)
+                send_msg(MSGTYPE_INIT2);
+            else
+                break;
+        }
+    }
     syslog(LOG_INFO, "Connection established");
     return 0;
 }

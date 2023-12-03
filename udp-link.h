@@ -5,6 +5,8 @@
 #define TIMEOUT            18*3600 // 18 hours
 #define BUFSIZE            65536   // bytes
 #define MTU                1400    // bytes
+#define RESEND_INIT        100     // ms
+#define TIMEOUT_INIT       5       // s
 
 #define MSGTYPE_INIT      0
 #define MSGTYPE_INIT2     1
@@ -33,7 +35,7 @@ void close_socket(void);
 int  send_msg(int msgtype, ...);
 int  send_data(char *data, int len);
 int  write_buf(int fd, buffer_t *buffer);
-int  read_msg();
+int  read_msg(int *msgtype);
 int  init_connection();
 
 #ifdef LOG

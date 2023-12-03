@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
         }
         if (FD_ISSET(socket_fd, &fd_in))
         {
-            int n = read_msg();
+            int n = read_msg(NULL);
             if (n < 0)
             {
                 send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
