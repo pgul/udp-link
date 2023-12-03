@@ -11,11 +11,12 @@
 
 u_long key;
 int socket_fd;
-unsigned int mtu = MTU;
+unsigned int mtu = MTU-DATA_HEADER_SIZE;
 buf_pkt_t buf_recv; /* currently unused */
 buf_pkt_t buf_sent;
 buffer_t buf_out;
 struct sockaddr_in remote_addr;
+int shutdown_local = 0, shutdown_remote = 0;
 
 void sigpipe(int signo)
 {
@@ -85,19 +86,19 @@ int main(int argc, char *argv[])
         FD_ZERO(&fd_in);
         FD_ZERO(&fd_out);
         maxfd = 0;
-        if (packet_to_send == 0 && (buf_sent.head+1)%buf_sent.size != buf_sent.tail)
+        if (packet_to_send == 0 && (buf_sent.head+1)%buf_sent.size != buf_sent.tail && !shutdown_remote && !shutdown_local)
         {
             FD_SET(stdin_fileno, &fd_in);
             if (stdin_fileno > maxfd)
                 maxfd = stdin_fileno;
         }
-        if (buf_out.head != buf_out.tail)
+        if (buf_out.head != buf_out.tail && !shutdown_local)
         {
             FD_SET(stdout_fileno, &fd_out);
             if (stdout_fileno > maxfd)
                 maxfd = stdout_fileno;
         }
-        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu)
+        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote)
         {
             // we have space for at least one packet
             FD_SET(socket_fd, &fd_in);
@@ -135,6 +136,27 @@ int main(int argc, char *argv[])
         }
         if (curtime-last_sent > keepalive_interval && !packet_to_send)
             send_msg(MSGTYPE_KEEPALIVE);
+        if (FD_ISSET(socket_fd, &fd_in))
+        {
+            int msgtype;
+            int n = read_msg(&msgtype);
+            if (n < 0)
+            {
+                send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+                return 1;
+            }
+            if (n > 0)
+            {
+                last_received = curtime;
+                if (msgtype == MSGTYPE_SHUTDOWN) {
+                    shutdown_remote = 1;
+                    buf_sent.head = buf_sent.tail = 0;
+                }
+                else if (msgtype == MSGTYPE_DATA && shutdown_local)
+                    /* ignore (purge) received data packets after shutdown */
+                    buf_out.head = buf_out.tail = 0;
+            }
+        }
         if (FD_ISSET(stdout_fileno, &fd_out))
         {
             int n = write_buf(stdout_fileno, &buf_out);
@@ -147,20 +169,9 @@ int main(int argc, char *argv[])
             if (n == 0)
             {
                 syslog(LOG_ERR, "stdout closed");
-                send_msg(MSGTYPE_SHUTDOWN, REASON_NORMAL);
-                return 1;
+                buf_out.head = buf_out.tail = 0;
+                shutdown_local = 1;
             }
-        }
-        if (FD_ISSET(socket_fd, &fd_in))
-        {
-            int n = read_msg(NULL);
-            if (n < 0)
-            {
-                send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
-                return 1;
-            }
-            if (n > 0)
-                last_received = curtime;
         }
         if (FD_ISSET(stdin_fileno, &fd_in))
         {
@@ -177,8 +188,8 @@ int main(int argc, char *argv[])
             else
             {
                 syslog(LOG_INFO, "stdin closed");
-                send_msg(MSGTYPE_SHUTDOWN, REASON_NORMAL);
-                return 0;
+                buf_out.head = buf_out.tail = 0;
+                shutdown_local = 1;
             }
         }
         if (packet_to_send > 0)
@@ -192,6 +203,17 @@ int main(int argc, char *argv[])
                 last_sent = curtime;
                 packet_to_send = 0;
             }
+        }
+        if (shutdown_local && buf_sent.head == buf_sent.tail && packet_to_send == 0)
+        {
+            send_msg(MSGTYPE_SHUTDOWN, REASON_NORMAL);
+            syslog(LOG_INFO, "Normal shutdown");
+            return 0;
+        }
+        if (shutdown_remote && buf_out.head == buf_out.tail)
+        {
+            syslog(LOG_INFO, "Remote shutdown");
+            return 0;
         }
     }
 }

@@ -9,6 +9,7 @@
 #define MTU                1400    // bytes
 #define RESEND_INIT        100     // ms
 #define TIMEOUT_INIT       5       // s
+#define DATA_HEADER_SIZE   10      // bytes: magic(4), nonce(4), seq(2)
 
 #define MSGTYPE_INIT      0
 #define MSGTYPE_INIT2     1
@@ -23,7 +24,7 @@
 #define REASON_TIMEOUT 2
 
 #define LOG            "udp-link.log"
-#define LOG_STDOUT     1
+// #define LOG_STDOUT     1
 
 struct stored_msg {
     unsigned short int seq;

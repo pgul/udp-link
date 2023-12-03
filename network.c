@@ -41,7 +41,7 @@ int send_msg(int msgtype, ...)
             datalen += sizeof(seq);
             len = va_arg(ap, unsigned);
             if (datalen + len > MTU) {
-                syslog(LOG_ERR, "Message too long: %d\n", datalen + len);
+                syslog(LOG_ERR, "Message too long: %d", datalen + len);
                 return -1;
             }
             memcpy(sendbuf + datalen, va_arg(ap, char *), len);
@@ -65,7 +65,7 @@ int send_msg(int msgtype, ...)
             datalen += sizeof(seq);
             break;
         default:
-            syslog(LOG_INFO, "Unknown message type: %d\n", msgtype);
+            syslog(LOG_INFO, "Unknown message type: %d", msgtype);
             break;
     }
     va_end(ap);
@@ -154,7 +154,7 @@ int receive_data(uint16_t seq, unsigned char *data, int len)
     static uint16_t recv_seq = 0;
     if (len > mtu)
     {
-        syslog(LOG_ERR, "Received packet too long: %d\n", len);
+        syslog(LOG_ERR, "Received packet too long: %d", len);
         return -1;
     }
     if (seq != recv_seq) {
@@ -313,8 +313,8 @@ int read_msg(int *msgtype_p)
                 return -1;
             }
             reason = *pdata;
-            syslog(LOG_INFO, "Shutdown message received: %u\n", reason);
-            return -1;
+            syslog(LOG_INFO, "Shutdown message received: %u", reason);
+            break;
         case MSGTYPE_YAK:
             if (n != sizeof(seq)) {
                 syslog(LOG_ERR, "Incorrect yak packet");
@@ -332,7 +332,7 @@ int read_msg(int *msgtype_p)
             process_nak(seq);
             break;
         default:
-            syslog(LOG_INFO, "Unknown message type ignored: %u\n", msgtype);
+            syslog(LOG_INFO, "Unknown message type ignored: %u", msgtype);
             rc = 0;
             break;
     }
@@ -375,7 +375,7 @@ int init_connection(void)
             curtime = time(NULL);
             if (curtime - start > TIMEOUT_INIT)
             {
-                syslog(LOG_ERR, "Timeout waiting for connection\n");
+                syslog(LOG_ERR, "Timeout waiting for connection");
                 return -1;
             }
             if (remote_addr.sin_addr.s_addr)

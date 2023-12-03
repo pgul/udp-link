@@ -1,4 +1,3 @@
-- if stdin closed, send and ack all buffered data (flush) and only then shutdown connection
 - crypt magic, generate nonce, check nonce
 - connect to remote tcp
 - command options (mtu, cmd, target, window)
