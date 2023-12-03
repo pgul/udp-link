@@ -3,7 +3,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <syslog.h>
@@ -56,10 +55,14 @@ int send_msg(int msgtype, ...)
             datalen += 1;
             break;
         case MSGTYPE_YAK:
-            // ...
+            seq = htons(va_arg(ap, unsigned));
+            memcpy(sendbuf + datalen, &seq, sizeof(seq));
+            datalen += sizeof(seq);
             break;
         case MSGTYPE_NAK:
-            // ...
+            seq = htons(va_arg(ap, unsigned));
+            memcpy(sendbuf + datalen, &seq, sizeof(seq));
+            datalen += sizeof(seq);
             break;
         default:
             syslog(LOG_INFO, "Unknown message type: %d\n", msgtype);
@@ -101,7 +104,7 @@ int write_buf(int fd, buffer_t *buffer)
 
     if (buffer->tail > buffer->head)
     {
-        n = write(fd, buffer->buf + buffer->tail, buffer->head - buffer->tail);
+        n = write(fd, buffer->data + buffer->tail, buffer->head - buffer->tail);
         if (n <= 0)
             return n;
         if (n < buffer->size - buffer->tail) {
@@ -112,7 +115,7 @@ int write_buf(int fd, buffer_t *buffer)
     }
     if (buffer->head > buffer->tail)
     {
-        int n2 = write(fd, buffer->buf + buffer->tail, buffer->head - buffer->tail);
+        int n2 = write(fd, buffer->data + buffer->tail, buffer->head - buffer->tail);
         if (n2 > 0)
         {
             buffer->tail += n2;
@@ -127,36 +130,126 @@ int write_buf(int fd, buffer_t *buffer)
 int send_data(char *data, int len)
 {
     static uint16_t seq = 0;
-    // todo: store data in buf_sent for possible resent in case of NAK
+    memcpy(buf_sent.msgs[buf_sent.head].data, data, len);
+    buf_sent.msgs[buf_sent.head].seq = seq;
+    buf_sent.msgs[buf_sent.head].len = len;
+    buf_sent.msgs[buf_sent.head].yak = 0;
+    gettimeofday(&buf_sent.msgs[buf_sent.head].timestamp, NULL);
+    buf_sent.head++;
     return send_msg(MSGTYPE_DATA, seq++, len, data);
+}
+
+/* seq is resetting after 65546, so we need be careful on comparation */
+int cmp_seq(unsigned short seq1, unsigned short seq2)
+{
+    if (seq1>seq2)
+        return seq1-seq2<0x8000u ? 1 : -1;
+    if (seq2>seq1)
+        return seq2-seq1<0x8000u ? -1 : 1;
+    return 0;
 }
 
 int receive_data(uint16_t seq, unsigned char *data, int len)
 {
+    static uint16_t recv_seq = 0;
     if (len > mtu)
     {
         syslog(LOG_ERR, "Received packet too long: %d\n", len);
         return -1;
     }
-    if (buf_recv.head + len >= buf_recv.size)
+    if (seq != recv_seq) {
+        if (cmp_seq(seq, recv_seq) > 0)
+        {
+            syslog(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
+            send_msg(MSGTYPE_NAK, seq);
+        }
+        else
+            syslog(LOG_INFO, "Received data packet with seq %u, expected %u, ignored");
+        return 1;
+    }
+    if (buf_out.head+len >= buf_out.size)
     {
-        memcpy(buf_recv.buf + buf_recv.head, data, buf_recv.size - buf_recv.head);
-        data += buf_recv.size - buf_recv.head;
-        len -= buf_recv.size - buf_recv.head;
-        buf_recv.head = 0;
+        memcpy(buf_out.data + buf_out.head, data, buf_out.size - buf_out.head);
+        data += buf_out.size - buf_out.head;
+        len  -= buf_out.size - buf_out.head;
+        buf_out.head = 0;
     }
     if (len > 0)
     {
-        memcpy(buf_recv.buf + buf_recv.head, data, len);
-        buf_recv.head += len;
+        memcpy(buf_out.data+buf_out.head, data, len);
+        buf_out.head += len;
     }
-    // todo: send ack
+    send_msg(MSGTYPE_YAK, recv_seq++);
     return 1;
+}
+
+int process_yak(unsigned short seq)
+{
+    unsigned short tail_seq;
+    if (buf_sent.head==buf_sent.tail)
+    {
+        syslog(LOG_INFO, "Incorrect YAK (buffer is empty), ignored");
+        return 0;
+    }
+    tail_seq = buf_sent.msgs[buf_sent.tail].seq;
+    if (tail_seq == seq)
+    {
+        buf_sent.tail++;
+        return 0;
+    }
+    if (cmp_seq(tail_seq, seq) > 0)
+        /* it's old (obsoleted) yak */
+        return 0;
+    if (cmp_seq(buf_sent.msgs[(buf_sent.head-1)%buf_sent.size].seq, seq) < 0)
+    {
+        /* yak from the future (was it rollback?) */
+        syslog(LOG_INFO, "Incorrect YAK, ignored");
+        return 0;
+    }
+    /* all packets from tail to seq are confirmed */
+    buf_sent.tail += seq>tail_seq ? seq-tail_seq+1 : seq+0x10000u-tail_seq+1;
+    buf_sent.tail %= buf_sent.size;
+}
+
+int process_nak(unsigned short seq)
+{
+    unsigned short tail_seq;
+    int ndx;
+
+    if (buf_sent.head==buf_sent.tail)
+    {
+        syslog(LOG_INFO, "Incorrect NAK (buffer is empty), ignored");
+        return 0;
+    }
+    tail_seq = buf_sent.msgs[buf_sent.tail].seq;
+    if (cmp_seq(tail_seq, seq) > 0)
+    {
+        /* it's old (obsoleted) nak */
+        syslog(LOG_INFO, "Incorrect (obsoleted) NAK, ignored");
+        return 0;
+    }
+    if (cmp_seq(buf_sent.msgs[(buf_sent.head-1)%buf_sent.size].seq, seq) < 0)
+    {
+        /* nak from the future (was it rollback?) */
+        syslog(LOG_INFO, "Incorrect (future) NAK, ignored");
+        return 0;
+    }
+    /* resend all packets from the seq to the head */
+    syslog(LOG_INFO, "Received NAK, resend packets from %u to %u", seq, buf_sent.msgs[(buf_sent.head-1)%buf_sent.size].seq);
+    ndx = (buf_sent.tail + (seq>tail_seq ? seq-tail_seq : seq+0x10000u-tail_seq)) % buf_sent.size;
+    do
+    {
+        send_msg(MSGTYPE_DATA, buf_sent.msgs[ndx].seq, buf_sent.msgs[ndx].len, buf_sent.msgs[ndx].data);
+        ndx = (ndx+1)%buf_sent.size;
+    }
+    while (ndx != buf_sent.head);
+    return 0;
 }
 
 int read_msg(int *msgtype_p)
 {
     unsigned char databuf[MTU];
+    unsigned char *pdata;
 	struct sockaddr_in remote;
     uint32_t magic;
     uint32_t nonce;
@@ -170,37 +263,73 @@ int read_msg(int *msgtype_p)
     n = recvfrom(socket_fd, databuf, sizeof(databuf), 0, (struct sockaddr *)&remote, &sl);
     if (n == -1)
         return -1;
+    if (n < sizeof(magic) + sizeof(nonce)) {
+        syslog(LOG_INFO, "Bad packet, length %u, ignore", n);
+        return 0;
+    }
     magic = ntohl(*(uint32_t *)databuf);
     nonce = ntohl(*(uint32_t *)(databuf + sizeof(magic)));
+    n -= sizeof(magic)+sizeof(nonce);
+    pdata = databuf+sizeof(magic)+sizeof(nonce);
     // todo: decrypt magic with nonce
     // todo: check if nonce is unique to prevent replay attacks (but allow reordered packets)
     memcpy(&remote_addr, &remote, sizeof(remote_addr));
-    msgtype = magic - key;
+    msgtype = magic-key;
     rc = 1;
     switch (msgtype) {
         case MSGTYPE_INIT:
+            if (n != 0) {
+                syslog(LOG_ERR, "Incorrect init packet");
+                return -1;
+            }
             send_msg(MSGTYPE_INIT2);
             break;
         case MSGTYPE_INIT2:
+            if (n != 0) {
+                syslog(LOG_ERR, "Incorrect init2 packet");
+                return -1;
+            }
             break;
         case MSGTYPE_DATA:
-            seq = ntohs(*(uint16_t *)(databuf + sizeof(magic) + sizeof(nonce)));
-            len = n - sizeof(magic) - sizeof(nonce) - sizeof(seq);
-            n = receive_data(seq, databuf + sizeof(magic) + sizeof(nonce) + sizeof(seq), len);
-            if (n < 0)
+            if (n <= sizeof(seq)) {
+                syslog(LOG_ERR, "Incorrect data packet");
+                return -1;
+            }
+            seq = ntohs(*(uint16_t *)pdata);
+            n -= sizeof(seq);
+            pdata += sizeof(seq);
+            if (receive_data(seq, pdata, n) < 0)
                 return -1;
             break;
         case MSGTYPE_KEEPALIVE:
+            if (n != 0) {
+                syslog(LOG_ERR, "Incorrect keepalive packet");
+                return -1;
+            }
             break;
         case MSGTYPE_SHUTDOWN:
-            reason = *(databuf + sizeof(magic) + sizeof(nonce));
+            if (n != 1) {
+                syslog(LOG_ERR, "Incorrect shutdown packet");
+                return -1;
+            }
+            reason = *pdata;
             syslog(LOG_INFO, "Shutdown message received: %u\n", reason);
             return -1;
         case MSGTYPE_YAK:
-            // ...
+            if (n != sizeof(seq)) {
+                syslog(LOG_ERR, "Incorrect yak packet");
+                return -1;
+            }
+            seq = ntohs(*(uint16_t *)pdata);
+            process_yak(seq);
             break;
         case MSGTYPE_NAK:
-            // ...
+            if (n != sizeof(seq)) {
+                syslog(LOG_ERR, "Incorrect nak packet");
+                return -1;
+            }
+            seq = ntohs(*(uint16_t *)pdata);
+            process_nak(seq);
             break;
         default:
             syslog(LOG_INFO, "Unknown message type ignored: %u\n", msgtype);

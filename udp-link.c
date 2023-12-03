@@ -3,9 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <time.h>
 #include <syslog.h>
-#include <sys/types.h>
 #include <signal.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -14,7 +12,9 @@
 u_long key;
 int socket_fd;
 unsigned int mtu = MTU;
-buffer_t buf_recv, buf_sent;
+buf_pkt_t buf_recv; /* currently unused */
+buf_pkt_t buf_sent;
+buffer_t buf_out;
 struct sockaddr_in remote_addr;
 
 void sigpipe(int signo)
@@ -29,7 +29,6 @@ int main(int argc, char *argv[])
     int stdout_fileno = fileno(stdout);
     int packet_to_send = 0;
     char *packet_data;
-    unsigned int window_pkts;
     unsigned int keepalive_interval = KEEPALIVE_INTERVAL;
     unsigned int timeout = TIMEOUT;
     short local_port;
@@ -52,18 +51,19 @@ int main(int argc, char *argv[])
         remote_addr.sin_port = htons(atoi(argv[4]));
     }
 
-    buf_recv.size = BUFSIZE;
-    buf_recv.buf=malloc(buf_recv.size);
-    window_pkts = BUFSIZE / mtu;
-    buf_sent.size = window_pkts * mtu;
-    buf_sent.buf=malloc(buf_sent.size);
+    buf_recv.size = buf_sent.size = BUFSIZE;
+    buf_recv.msgs = malloc(buf_recv.size*sizeof(buf_recv.msgs[0]));
+    buf_sent.msgs = malloc(buf_sent.size*sizeof(buf_sent.msgs[0]));
+    buf_out.size = BUF2SIZE;
+    buf_out.data = malloc(buf_out.size);
     packet_data = malloc(mtu);
-    if (buf_recv.buf==NULL || buf_sent.buf==NULL || packet_data==NULL)
+    if (buf_recv.msgs==NULL || buf_sent.msgs==NULL || buf_out.data==NULL || packet_data==NULL)
     {   syslog(LOG_ERR, "Can't malloc()");
         return 1;
     }
     buf_sent.head = buf_sent.tail = 0;
     buf_recv.head = buf_recv.tail = 0;
+    buf_out.head  = buf_out.tail  = 0;
 
     sigset(SIGPIPE, sigpipe);
 
@@ -91,13 +91,13 @@ int main(int argc, char *argv[])
             if (stdin_fileno > maxfd)
                 maxfd = stdin_fileno;
         }
-        if (buf_recv.head != buf_recv.tail)
+        if (buf_out.head != buf_out.tail)
         {
             FD_SET(stdout_fileno, &fd_out);
             if (stdout_fileno > maxfd)
                 maxfd = stdout_fileno;
         }
-        if ((buf_recv.head+buf_recv.size-buf_recv.tail) % buf_recv.size < buf_recv.size-mtu)
+        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu)
         {
             // we have space for at least one packet
             FD_SET(socket_fd, &fd_in);
@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
             send_msg(MSGTYPE_KEEPALIVE);
         if (FD_ISSET(stdout_fileno, &fd_out))
         {
-            int n = write_buf(stdout_fileno, &buf_recv);
+            int n = write_buf(stdout_fileno, &buf_out);
             if (n < 0)
             {
                 syslog(LOG_ERR, "Can't write to stdout: %s", strerror(errno));

@@ -1,0 +1,11 @@
+- if stdin closed, send and ack all buffered data (flush) and only then shutdown connection
+- crypt magic, generate nonce, check nonce
+- connect to remote tcp
+- command options (mtu, cmd, target, window)
+- start as ssh proxy (autoselect port, generate key, set IP address)
+- resend packet if unconfirmed too long (~0.2 s, optional or adjustable)
+- confirm each N (~10) packets or after ~0.1 s
+- packet reordering
+- sparse data, autorecovery lost packets
+- send as batches (packet includes previous data, MSGTYPE_MDATA)
+- msquic
