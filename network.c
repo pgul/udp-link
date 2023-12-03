@@ -13,8 +13,7 @@ int send_msg(int msgtype, ...)
     va_list ap;
     char sendbuf[MTU];
     int datalen=0;
-    uint32_t magic = htonl(key + msgtype);
-    uint32_t nonce = 0; // todo: generate unique nonce
+    uint32_t magic;
     uint16_t seq;
     int len;
     unsigned char reason;
@@ -24,11 +23,9 @@ int send_msg(int msgtype, ...)
         syslog(LOG_ERR, "Remote address is not set");
         return -1;
     }
-    // todo: encrypt magic with nonce
+    magic = htonl(key + msgtype);
     memcpy(sendbuf, &magic, sizeof(magic));
     datalen += sizeof(magic);
-    memcpy(sendbuf + datalen, &nonce, sizeof(nonce));
-    datalen += sizeof(nonce);
     va_start(ap, msgtype);
     switch (msgtype) {
         case MSGTYPE_INIT:
@@ -252,7 +249,6 @@ int read_msg(int *msgtype_p)
     unsigned char *pdata;
 	struct sockaddr_in remote;
     uint32_t magic;
-    uint32_t nonce;
     uint16_t seq;
     int len, n, rc, msgtype;
     unsigned char reason;
@@ -263,17 +259,14 @@ int read_msg(int *msgtype_p)
     n = recvfrom(socket_fd, databuf, sizeof(databuf), 0, (struct sockaddr *)&remote, &sl);
     if (n == -1)
         return -1;
-    if (n < sizeof(magic) + sizeof(nonce)) {
+    if (n < sizeof(magic)) {
         syslog(LOG_INFO, "Bad packet, length %u, ignore", n);
         return 0;
     }
     magic = ntohl(*(uint32_t *)databuf);
-    nonce = ntohl(*(uint32_t *)(databuf + sizeof(magic)));
-    n -= sizeof(magic)+sizeof(nonce);
-    pdata = databuf+sizeof(magic)+sizeof(nonce);
-    // todo: decrypt magic with nonce
-    // todo: check if nonce is unique to prevent replay attacks (but allow reordered packets)
     memcpy(&remote_addr, &remote, sizeof(remote_addr));
+    n -= sizeof(magic);
+    pdata = databuf+sizeof(magic);
     msgtype = magic-key;
     rc = 1;
     switch (msgtype) {

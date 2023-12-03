@@ -1,4 +1,3 @@
-- crypt magic, generate nonce, check nonce
 - connect to remote tcp
 - command options (mtu, cmd, target, window)
 - start as ssh proxy (autoselect port, generate key, set IP address)
@@ -7,4 +6,6 @@
 - packet reordering
 - sparse data, autorecovery lost packets
 - send as batches (packet includes previous data, MSGTYPE_MDATA)
+- crypt magic, generate nonce, check nonce
+- if IP changed, perform extra authentication using key2
 - msquic
