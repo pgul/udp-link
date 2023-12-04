@@ -166,7 +166,7 @@ int receive_data(uint16_t seq, unsigned char *data, int len)
             send_msg(MSGTYPE_NAK, seq);
         }
         else
-            syslog(LOG_INFO, "Received data packet with seq %u, expected %u, ignored");
+            syslog(LOG_INFO, "Received data packet with seq %u, expected %u, ignored", seq, recv_seq);
         return 1;
     }
     if (buf_out.head+len >= buf_out.size)
