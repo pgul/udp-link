@@ -18,17 +18,17 @@ buf_pkt_t buf_recv; /* currently unused */
 buf_pkt_t buf_sent;
 buffer_t buf_out;
 struct sockaddr_in remote_addr;
+static int server = 0;
 static int shutdown_local = 0, shutdown_remote = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
 
 void usage(void)
 {
-    printf("Usage: udp-link [options] key\n");
+    printf("Usage: udp-link [options] host [port]\n");
     printf("Options:\n");
-    printf("  -r, --remote=IP[:PORT]  remote IP address and port, default port %u\n", DEFAULT_PORT);
-    printf("  -t, --target=IP[:PORT]  target IP address and port, default port 22\n");
-    printf("  -b, --bind=PORT         bind to local port PORT, default %u\n", DEFAULT_PORT);
+    printf("  -t, --target=IP[:PORT]  target IP address and port, default 127.0.0.1:22\n");
+    printf("  -b, --bind=PORT         bind to local port PORT, default %u-%u\n", LOCAL_PORT_MIN, LOCAL_PORT_MAX);
     printf("  -h, --help              display this help and exit\n");
 }
 
@@ -40,7 +40,9 @@ void sigpipe(int signo)
 int parse_args(int argc, char *argv[])
 {
     int c;
-    char target[256], remote[256];
+    char target[256], remote[256], rport[8];
+    char *p;
+    short local_port_min = LOCAL_PORT_MIN, local_port_max = LOCAL_PORT_MAX;
     struct option long_options[] = {
         {"target", required_argument, NULL, 't'},
         {"remote", required_argument, NULL, 'r'},
@@ -58,23 +60,85 @@ int parse_args(int argc, char *argv[])
             case 'r':   strncpy(remote, optarg, sizeof(remote)-1);
                         remote[sizeof(remote)-1] = '\0';
                         break;
-            case 'b':   local_port = atoi(optarg);
+            case 'b':   local_port_min = atoi(optarg);
+                        if (p=strchr(optarg, '-'))
+                        {   *p = '\0';
+                            local_port_max = atoi(p+1);
+                        }
+                        else
+                            local_port_max = local_port_min;
                         break;
             case 'h':   usage();
-                        return 0;
+                        return 1;
         }
     }
     argc -= optind;
     argv += optind;
 
-    if (argv[0] && !argv[1]) {
-        key = atoi(argv[0]);
-    }
-    else {
+    if (!argv[0])
+    {
         usage();
         return 1;
     }
-    if (target[0]) {
+    local_port = local_port_min;
+    /* bind to free port and output it */
+    for (local_port = local_port_min; local_port <= local_port_max; local_port++)
+    {
+        socket_fd = open_socket(local_port);
+        if (socket_fd >= 0)
+            break;
+    }
+    if (socket_fd < 0)
+    {   fprintf(stderr, "Can't bind to any port in range %d-%d\n", local_port_min, local_port_max);
+        return 1;
+    }
+    if (strcmp(argv[0], "server") == 0)
+    {
+        printf("%u\n", local_port);
+        key = atoi(argv[1]);
+        server = 1;
+    }
+    else if (strcmp(argv[0], "client") == 0)
+        key = atoi(argv[1]);
+    else
+    {   /* generate random connection key, */
+        /* make ssh connection to remote, run "udp-link server" there */
+        /* then read port from the server and run local udp-link */
+        FILE *pssh;
+        char ssh_cmd[256];
+        int rc;
+
+        key = rand();
+        snprintf(ssh_cmd, sizeof(ssh_cmd),
+            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes %s%s %s udp-link --target %s server %u",
+            argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
+            argv[0], target[0] ? target : "127.0.0.1:22", key);
+        pssh = popen(ssh_cmd, "r");
+        if (pssh == NULL)
+        {   fprintf(stderr, "Can't run ssh: %s\n", strerror(errno));
+            return 1;
+        }
+        if (fgets(rport, sizeof(rport), pssh) == NULL)
+        {   fprintf(stderr, "Can't run udp-link on remote\n");
+            return 1;
+        }
+        rc = pclose(pssh);
+        if (rc != 0)
+        {   fprintf(stderr, "ssh exited with code %d\n", rc);
+            return 1;
+        }
+        target[0] = '\0';
+        p = strchr(argv[0], '@');
+        if (p)
+            strncpy(remote, p+1, sizeof(remote));
+        else
+            strncpy(remote, argv[0], sizeof(remote));
+        remote[sizeof(remote)-strlen(rport)-2] = '\0';
+        strcat(remote, ":");
+        strcat(remote, rport);
+    }
+    if (target[0])
+    {
         struct sockaddr_in target_addr;
         struct hostent *target_host;
         int target_sockfd;
@@ -109,7 +173,8 @@ int parse_args(int argc, char *argv[])
     }
 
     memset(&remote_addr, 0, sizeof(remote_addr));
-    if (remote[0]) {
+    if (remote[0])
+    {
         struct hostent *remote_host;
         char *p = strchr(remote, ':');
         if (p)
@@ -117,7 +182,7 @@ int parse_args(int argc, char *argv[])
             remote_addr.sin_port = htons(atoi(p+1));
         }
         else
-            remote_addr.sin_port = htons(DEFAULT_PORT);
+            remote_addr.sin_port = htons(LOCAL_PORT_MIN);
         remote_host = gethostbyname(remote);
         if (remote_host == NULL)
         {   fprintf(stderr, "Can't resolve remote host %s\n", remote);
@@ -159,16 +224,15 @@ int main(int argc, char *argv[])
 
     sigset(SIGPIPE, sigpipe);
 
-    socket_fd = open_socket(local_port);
-    if (socket_fd < 0)
-        return 1;
-
     if (init_connection() != 0)
         return 3;
 
+    if (server)
+        daemon(0, 0);
     last_sent = last_received = time(NULL);
 
-    while (1) {
+    while (1)
+    {
         fd_set fd_in, fd_out;
         struct timeval tm;
         int r, maxfd;
@@ -190,20 +254,20 @@ int main(int argc, char *argv[])
                 maxfd = target_out_fd;
         }
         if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote)
-        {
-            // we have space for at least one packet
+        {   /* we have space for at least one packet */
             FD_SET(socket_fd, &fd_in);
             if (socket_fd > maxfd)
                 maxfd = socket_fd;
         }
         /* Assume we always can write to socket */
         curtime=time(NULL);
-        if (packet_to_send) {
+        if (packet_to_send)
+        {
             tm.tv_sec=0;
             tm.tv_usec=RESEND_INTERVAL*1000;
         }
-        else {
-            /* keepalive is mandatory */
+        else
+        {   /* keepalive is mandatory */
             tm.tv_sec=keepalive_interval-(curtime-last_sent);
             if (timeout && tm.tv_sec>timeout-(curtime-last_received))
                 tm.tv_sec=timeout-(curtime-last_received);
@@ -239,7 +303,8 @@ int main(int argc, char *argv[])
             if (n > 0)
             {
                 last_received = curtime;
-                if (msgtype == MSGTYPE_SHUTDOWN) {
+                if (msgtype == MSGTYPE_SHUTDOWN)
+                {
                     shutdown_remote = 1;
                     buf_sent.head = buf_sent.tail = 0;
                 }
