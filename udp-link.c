@@ -19,7 +19,6 @@ buf_pkt_t buf_recv; /* currently unused */
 buf_pkt_t buf_sent;
 buffer_t buf_out;
 struct sockaddr_in remote_addr;
-static int server = 0;
 static int shutdown_local = 0, shutdown_remote = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
@@ -93,9 +92,10 @@ int parse_args(int argc, char *argv[])
     }
     if (strcmp(argv[0], "server") == 0)
     {
-        printf("%hu\n", local_port);
+        fprintf(stdout, "%hu\n", local_port);
+        fflush(stdout);
         key = atoi(argv[1]);
-        server = 1;
+        daemon(0, 0);
     }
     else if (strcmp(argv[0], "client") == 0)
         key = atoi(argv[1]);
@@ -226,8 +226,6 @@ int main(int argc, char *argv[])
     if (init_connection() != 0)
         return 3;
 
-    if (server)
-        daemon(0, 0);
     last_sent = last_received = time(NULL);
 
     while (1)
