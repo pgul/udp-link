@@ -121,7 +121,7 @@ int parse_args(int argc, char *argv[])
 
         key = rand();
         snprintf(ssh_cmd, sizeof(ssh_cmd),
-            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes %s%s %s udp-link --target %s server %lu",
+            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link --target %s server %lu",
             argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
             argv[0], target[0] ? target : "127.0.0.1:22", key);
         pssh = popen(ssh_cmd, "r");
