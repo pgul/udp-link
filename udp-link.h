@@ -57,6 +57,7 @@ int  send_data(char *data, int len);
 int  write_buf(int fd, buffer_t *buffer);
 int  read_msg(int *msgtype);
 int  init_connection();
+char *dump_data(char *buf, int len);
 
 #ifdef LOG
 #define syslog write_log

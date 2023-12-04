@@ -394,7 +394,10 @@ int main(int argc, char *argv[])
         {
             int n = read(target_in_fd, packet_data, mtu);
             if (n > 0)
+            {
+syslog(LOG_DEBUG, "Receive data, len %u, data %s", n, dump_data(packet_data, n));
                 packet_to_send = n;
+            }
             else if (n < 0)
             {
                 syslog(LOG_ERR, "Can't read from target: %s", strerror(errno));

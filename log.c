@@ -3,7 +3,25 @@
 #include <time.h>
 #include <string.h>
 #include <syslog.h>
+#include <ctype.h>
 #include "udp-link.h"
+
+char * dump_data(char *data, int len)
+{
+  int i, j;
+  static char buf[MTU*4+1];
+
+  for (i=0, j=0; i<len; i++)
+  {
+    if (isprint(data[i]))
+        buf[j++]=data[i];
+    else
+    {   sprintf(buf+j, "\\x%02x", (unsigned char)data[i]);
+        j+=4;
+    }
+  }
+  return buf;
+}
 
 #ifdef LOG
 void open_log(char *name, int opt1, int opt2)

@@ -108,6 +108,7 @@ int write_buf(int fd, buffer_t *buffer)
         n = write(fd, buffer->data + buffer->tail, buffer->size - buffer->tail);
         if (n <= 0)
             return n;
+syslog(LOG_DEBUG, "Write %u bytes to target: %s", n, dump_data(buffer->data + buffer->tail, n));
         if (n < buffer->size - buffer->tail)
         {
             buffer->tail += n;
@@ -120,6 +121,7 @@ int write_buf(int fd, buffer_t *buffer)
         int n2 = write(fd, buffer->data + buffer->tail, buffer->head - buffer->tail);
         if (n2 > 0)
         {
+syslog(LOG_DEBUG, "Write %u bytes to target: %s", n2, dump_data(buffer->data + buffer->tail, n2));
             buffer->tail += n2;
             n += n2;
         }
@@ -138,6 +140,7 @@ int send_data(char *data, int len)
     buf_sent.msgs[buf_sent.head].yak = 0;
     gettimeofday(&buf_sent.msgs[buf_sent.head].timestamp, NULL);
     buf_sent.head++;
+syslog(LOG_DEBUG, "Sending data packet, seq %u, len %u, data %s", seq, len, dump_data(data, len));
     return send_msg(MSGTYPE_DATA, seq++, len, data);
 }
 
@@ -159,6 +162,7 @@ int receive_data(uint16_t seq, unsigned char *data, int len)
         syslog(LOG_ERR, "Received packet too long: %d", len);
         return -1;
     }
+syslog(LOG_DEBUG, "Receive data packet, seq %u, len %u, data %s", seq, len, dump_data(data, len));
     if (seq != recv_seq) {
         if (cmp_seq(seq, recv_seq) > 0)
         {
