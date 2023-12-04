@@ -77,11 +77,13 @@ int open_socket(short local_port)
     int optval = 1;
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (fd < 0) {
+    if (fd < 0)
+    {
         syslog(LOG_ERR, "socket() failed: %s", strerror(errno));
         return -1;
     }
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
+    {
         syslog(LOG_ERR, "setsockopt() failed: %s", strerror(errno));
         return -1;
     }
@@ -89,7 +91,8 @@ int open_socket(short local_port)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(local_port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
         syslog(LOG_ERR, "bind() failed: %s", strerror(errno));
         return -1;
     }
@@ -105,7 +108,8 @@ int write_buf(int fd, buffer_t *buffer)
         n = write(fd, buffer->data + buffer->tail, buffer->size - buffer->tail);
         if (n <= 0)
             return n;
-        if (n < buffer->size - buffer->tail) {
+        if (n < buffer->size - buffer->tail)
+        {
             buffer->tail += n;
             return n;
         }
@@ -260,7 +264,8 @@ int read_msg(int *msgtype_p)
     n = recvfrom(socket_fd, databuf, sizeof(databuf), 0, (struct sockaddr *)&remote, &sl);
     if (n == -1)
         return -1;
-    if (n < sizeof(magic)) {
+    if (n < sizeof(magic))
+    {
         syslog(LOG_INFO, "Bad packet, length %u, ignore", n);
         return 0;
     }
@@ -272,20 +277,23 @@ int read_msg(int *msgtype_p)
     rc = 1;
     switch (msgtype) {
         case MSGTYPE_INIT:
-            if (n != 0) {
+            if (n != 0)
+            {
                 syslog(LOG_ERR, "Incorrect init packet");
                 return -1;
             }
             send_msg(MSGTYPE_INIT2);
             break;
         case MSGTYPE_INIT2:
-            if (n != 0) {
+            if (n != 0)
+            {
                 syslog(LOG_ERR, "Incorrect init2 packet");
                 return -1;
             }
             break;
         case MSGTYPE_DATA:
-            if (n <= sizeof(seq)) {
+            if (n <= sizeof(seq))
+            {
                 syslog(LOG_ERR, "Incorrect data packet");
                 return -1;
             }
@@ -296,13 +304,15 @@ int read_msg(int *msgtype_p)
                 return -1;
             break;
         case MSGTYPE_KEEPALIVE:
-            if (n != 0) {
+            if (n != 0)
+            {
                 syslog(LOG_ERR, "Incorrect keepalive packet");
                 return -1;
             }
             break;
         case MSGTYPE_SHUTDOWN:
-            if (n != 1) {
+            if (n != 1)
+            {
                 syslog(LOG_ERR, "Incorrect shutdown packet");
                 return -1;
             }
@@ -310,7 +320,8 @@ int read_msg(int *msgtype_p)
             syslog(LOG_INFO, "Shutdown message received: %u", reason);
             break;
         case MSGTYPE_YAK:
-            if (n != sizeof(seq)) {
+            if (n != sizeof(seq))
+            {
                 syslog(LOG_ERR, "Incorrect yak packet");
                 return -1;
             }
@@ -318,7 +329,8 @@ int read_msg(int *msgtype_p)
             process_yak(seq);
             break;
         case MSGTYPE_NAK:
-            if (n != sizeof(seq)) {
+            if (n != sizeof(seq))
+            {
                 syslog(LOG_ERR, "Incorrect nak packet");
                 return -1;
             }
@@ -341,7 +353,8 @@ int init_connection(void)
     /* Answer MSGTYPE_INIT2 on all MSGTYPE_INIT during init stage */
     time_t start = time(NULL);
 
-    if (remote_addr.sin_addr.s_addr) {
+    if (remote_addr.sin_addr.s_addr)
+    {
         if (send_msg(MSGTYPE_INIT) < 0)
             return -1;
     }
