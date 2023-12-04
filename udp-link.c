@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <syslog.h>
 #include <signal.h>
+#include <time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -40,9 +41,9 @@ void sigpipe(int signo)
 int parse_args(int argc, char *argv[])
 {
     int c;
-    char target[256], remote[256], rport[8];
+    char target[256], remote[256]="", rport[8];
     char *p;
-    short local_port_min = LOCAL_PORT_MIN, local_port_max = LOCAL_PORT_MAX;
+    unsigned short local_port_min = LOCAL_PORT_MIN, local_port_max = LOCAL_PORT_MAX;
     struct option long_options[] = {
         {"target", required_argument, NULL, 't'},
         {"remote", required_argument, NULL, 'r'},
@@ -62,9 +63,7 @@ int parse_args(int argc, char *argv[])
                         break;
             case 'b':   local_port_min = atoi(optarg);
                         if (p=strchr(optarg, '-'))
-                        {   *p = '\0';
                             local_port_max = atoi(p+1);
-                        }
                         else
                             local_port_max = local_port_min;
                         break;
@@ -94,7 +93,7 @@ int parse_args(int argc, char *argv[])
     }
     if (strcmp(argv[0], "server") == 0)
     {
-        printf("%u\n", local_port);
+        printf("%hu\n", local_port);
         key = atoi(argv[1]);
         server = 1;
     }
@@ -110,7 +109,7 @@ int parse_args(int argc, char *argv[])
 
         key = rand();
         snprintf(ssh_cmd, sizeof(ssh_cmd),
-            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes %s%s %s udp-link --target %s server %u",
+            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes %s%s %s udp-link --target %s server %lu",
             argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
             argv[0], target[0] ? target : "127.0.0.1:22", key);
         pssh = popen(ssh_cmd, "r");
@@ -215,14 +214,14 @@ int main(int argc, char *argv[])
     buf_out.data = malloc(buf_out.size);
     packet_data = malloc(mtu);
     if (buf_recv.msgs==NULL || buf_sent.msgs==NULL || buf_out.data==NULL || packet_data==NULL)
-    {   syslog(LOG_ERR, "Can't malloc()");
+    {   fprintf(stderr, "Can't malloc()\n");
         return 1;
     }
     buf_sent.head = buf_sent.tail = 0;
     buf_recv.head = buf_recv.tail = 0;
     buf_out.head  = buf_out.tail  = 0;
 
-    sigset(SIGPIPE, sigpipe);
+    sigaction(SIGPIPE, &(struct sigaction){.sa_handler=sigpipe, .sa_flags=SA_RESTART}, NULL);
 
     if (init_connection() != 0)
         return 3;

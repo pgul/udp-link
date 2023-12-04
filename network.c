@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -360,7 +361,7 @@ int init_connection(void)
         r = select(maxfd, &fd_in, &fd_out, NULL, &tm);
         if (r < 0)
         {
-            syslog(LOG_ERR, "select() failed: %s", strerror(errno));
+            fprintf(stderr, "select() failed: %s", strerror(errno));
             return -1;
         }
         if (r == 0)
@@ -368,7 +369,7 @@ int init_connection(void)
             curtime = time(NULL);
             if (curtime - start > TIMEOUT_INIT)
             {
-                syslog(LOG_ERR, "Timeout waiting for connection");
+                fprintf(stderr, "Timeout waiting for connection\n");
                 return -1;
             }
             if (remote_addr.sin_addr.s_addr)
