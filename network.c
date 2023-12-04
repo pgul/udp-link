@@ -101,7 +101,7 @@ int write_buf(int fd, buffer_t *buffer)
 
     if (buffer->tail > buffer->head)
     {
-        n = write(fd, buffer->data + buffer->tail, buffer->head - buffer->tail);
+        n = write(fd, buffer->data + buffer->tail, buffer->size - buffer->tail);
         if (n <= 0)
             return n;
         if (n < buffer->size - buffer->tail) {
