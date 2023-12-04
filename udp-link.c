@@ -182,6 +182,11 @@ int parse_args(int argc, char *argv[])
         }
         target_out_fd = target_in_fd = target_sockfd;
     }
+    else
+    {
+        target_in_fd = fileno(stdin);
+        target_out_fd = fileno(stdout);
+    }
 
     memset(&remote_addr, 0, sizeof(remote_addr));
     if (remote[0])
