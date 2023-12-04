@@ -40,7 +40,7 @@ void sigpipe(int signo)
 int parse_args(int argc, char *argv[])
 {
     int c;
-    char target[256], remote[256]="", rport[8];
+    char target[256]="", remote[256]="", rport[8];
     char *p;
     unsigned short local_port_min = LOCAL_PORT_MIN, local_port_max = LOCAL_PORT_MAX;
     struct option long_options[] = {
@@ -92,13 +92,25 @@ int parse_args(int argc, char *argv[])
     }
     if (strcmp(argv[0], "server") == 0)
     {
+        if (!argv[1])
+        {
+            fprintf(stderr, "second parameter (key) required for server mode\n");
+            return 1;
+        }
         fprintf(stdout, "%hu\n", local_port);
         fflush(stdout);
         key = atoi(argv[1]);
         daemon(0, 0);
     }
     else if (strcmp(argv[0], "client") == 0)
+    {
+        if (!argv[1])
+        {
+            fprintf(stderr, "second parameter (key) required for client mode\n");
+            return 1;
+        }
         key = atoi(argv[1]);
+    }
     else
     {   /* generate random connection key, */
         /* make ssh connection to remote, run "udp-link server" there */
