@@ -117,6 +117,8 @@ int parse_args(int argc, char *argv[])
         /* then read port from the server and run local udp-link */
         FILE *pssh;
         char ssh_cmd[256];
+        int saved_stdin;
+        FILE *new_stdin;
         int rc;
 
         key = rand();
@@ -124,6 +126,10 @@ int parse_args(int argc, char *argv[])
             "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link --target %s server %lu",
             argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
             argv[0], target[0] ? target : "127.0.0.1:22", key);
+        saved_stdin = dup(fileno(stdin));
+        new_stdin = fopen("/dev/null", "r");
+        dup2(fileno(new_stdin), fileno(stdin));
+        fclose(new_stdin);
         pssh = popen(ssh_cmd, "r");
         if (pssh == NULL)
         {   fprintf(stderr, "Can't run ssh: %s\n", strerror(errno));
@@ -138,6 +144,8 @@ int parse_args(int argc, char *argv[])
         {   fprintf(stderr, "ssh exited with code %d\n", rc);
             return 1;
         }
+        dup2(saved_stdin, fileno(stdin));
+        close(saved_stdin);
         target[0] = '\0';
         p = strchr(argv[0], '@');
         if (p)
