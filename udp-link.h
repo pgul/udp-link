@@ -10,6 +10,7 @@
 #define RESEND_INIT        100     // ms
 #define TIMEOUT_INIT       5       // s
 #define DATA_HEADER_SIZE   6       // bytes: magic(4), seq(2)
+#define DEFAULT_PORT       43200
 
 #define MSGTYPE_INIT      0
 #define MSGTYPE_INIT2     1

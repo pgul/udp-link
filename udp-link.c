@@ -7,6 +7,8 @@
 #include <signal.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <getopt.h>
 #include "udp-link.h"
 
 u_long key;
@@ -16,41 +18,130 @@ buf_pkt_t buf_recv; /* currently unused */
 buf_pkt_t buf_sent;
 buffer_t buf_out;
 struct sockaddr_in remote_addr;
-int shutdown_local = 0, shutdown_remote = 0;
+static int shutdown_local = 0, shutdown_remote = 0;
+static int target_in_fd, target_out_fd;
+static short local_port;
+
+void usage(void)
+{
+    printf("Usage: udp-link [options] key\n");
+    printf("Options:\n");
+    printf("  -r, --remote=IP[:PORT]  remote IP address and port, default port %u\n", DEFAULT_PORT);
+    printf("  -t, --target=IP[:PORT]  target IP address and port, default port 22\n");
+    printf("  -b, --bind=PORT         bind to local port PORT, default %u\n", DEFAULT_PORT);
+    printf("  -h, --help              display this help and exit\n");
+}
 
 void sigpipe(int signo)
 {
     syslog(LOG_ERR, "SIGPIPE received");
 }
 
+int parse_args(int argc, char *argv[])
+{
+    int c;
+    char target[256], remote[256];
+    struct option long_options[] = {
+        {"target", required_argument, NULL, 't'},
+        {"remote", required_argument, NULL, 'r'},
+        {"bind",   required_argument, NULL, 'b'},
+        {"help",   no_argument,       NULL, 'h'},
+        {0, 0, 0, 0 }
+    };
+    while ((c = getopt_long(argc, argv, "t:r:b:h", long_options, NULL)) != EOF)
+    {
+        switch (c)
+        {
+            case 't':   strncpy(target, optarg, sizeof(target)-1);
+                        target[sizeof(target)-1] = '\0';
+                        break;
+            case 'r':   strncpy(remote, optarg, sizeof(remote)-1);
+                        remote[sizeof(remote)-1] = '\0';
+                        break;
+            case 'b':   local_port = atoi(optarg);
+                        break;
+            case 'h':   usage();
+                        return 0;
+        }
+    }
+    argc -= optind;
+    argv += optind;
+
+    if (argv[0] && !argv[1]) {
+        key = atoi(argv[0]);
+    }
+    else {
+        usage();
+        return 1;
+    }
+    if (target[0]) {
+        struct sockaddr_in target_addr;
+        struct hostent *target_host;
+        int target_sockfd;
+        char *p;
+
+        memset(&target_addr, 0, sizeof(target_addr));
+        p = strchr(target, ':');
+        if (p)
+        {   *p = '\0';
+            target_addr.sin_port = htons(atoi(p+1));
+        }
+        else
+            target_addr.sin_port = htons(22);
+        target_host = gethostbyname(target);
+        if (target_host == NULL)
+        {   fprintf(stderr, "Can't resolve target host %s\n", target);
+            return 1;
+        }
+        memcpy(&target_addr.sin_addr, target_host->h_addr_list[0], target_host->h_length);
+        target_addr.sin_family = AF_INET;
+        target_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (target_sockfd < 0)
+        {   fprintf(stderr, "Can't create socket: %s\n", strerror(errno));
+            return 1;
+        }
+        if (connect(target_sockfd, (struct sockaddr *)&target_addr, sizeof(target_addr)) < 0)
+        {
+            fprintf(stderr, "Can't connect to %s: %s\n", target, strerror(errno));
+            return 1;
+        }
+        target_out_fd = target_in_fd = target_sockfd;
+    }
+
+    memset(&remote_addr, 0, sizeof(remote_addr));
+    if (remote[0]) {
+        struct hostent *remote_host;
+        char *p = strchr(remote, ':');
+        if (p)
+        {   *p = '\0';
+            remote_addr.sin_port = htons(atoi(p+1));
+        }
+        else
+            remote_addr.sin_port = htons(DEFAULT_PORT);
+        remote_host = gethostbyname(remote);
+        if (remote_host == NULL)
+        {   fprintf(stderr, "Can't resolve remote host %s\n", remote);
+            return 1;
+        }
+        memcpy(&remote_addr.sin_addr, remote_host->h_addr_list[0], remote_host->h_length);
+        remote_addr.sin_family = AF_INET;
+    }
+
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     time_t last_sent, last_received;
-    int stdin_fileno = fileno(stdin);
-    int stdout_fileno = fileno(stdout);
     int packet_to_send = 0;
     char *packet_data;
     unsigned int keepalive_interval = KEEPALIVE_INTERVAL;
     unsigned int timeout = TIMEOUT;
-    short local_port;
+
+    if (parse_args(argc, argv) != 0)
+        return 1;
 
     openlog("udp-link", LOG_PID, LOG_DAEMON);
-    /* params */
-    // ...
-    if (argv[1] && argv[2]) {
-        key=atoi(argv[1]);
-        local_port = atoi(argv[2]);
-    }
-    else {
-        printf("Usage: udp-link key local_port [remote_ip remote_port]\n");
-        return 1;
-    }
-    memset(&remote_addr, 0, sizeof(remote_addr));
-    if (argv[3] && argv[4]) {
-        remote_addr.sin_family = AF_INET;
-        remote_addr.sin_addr.s_addr = inet_addr(argv[3]);
-        remote_addr.sin_port = htons(atoi(argv[4]));
-    }
 
     buf_recv.size = buf_sent.size = BUFSIZE;
     buf_recv.msgs = malloc(buf_recv.size*sizeof(buf_recv.msgs[0]));
@@ -88,15 +179,15 @@ int main(int argc, char *argv[])
         maxfd = 0;
         if (packet_to_send == 0 && (buf_sent.head+1)%buf_sent.size != buf_sent.tail && !shutdown_remote && !shutdown_local)
         {
-            FD_SET(stdin_fileno, &fd_in);
-            if (stdin_fileno > maxfd)
-                maxfd = stdin_fileno;
+            FD_SET(target_in_fd, &fd_in);
+            if (target_in_fd > maxfd)
+                maxfd = target_in_fd;
         }
         if (buf_out.head != buf_out.tail && !shutdown_local)
         {
-            FD_SET(stdout_fileno, &fd_out);
-            if (stdout_fileno > maxfd)
-                maxfd = stdout_fileno;
+            FD_SET(target_out_fd, &fd_out);
+            if (target_out_fd > maxfd)
+                maxfd = target_out_fd;
         }
         if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote)
         {
@@ -157,37 +248,36 @@ int main(int argc, char *argv[])
                     buf_out.head = buf_out.tail = 0;
             }
         }
-        if (FD_ISSET(stdout_fileno, &fd_out))
+        if (FD_ISSET(target_out_fd, &fd_out))
         {
-            int n = write_buf(stdout_fileno, &buf_out);
+            int n = write_buf(target_out_fd, &buf_out);
             if (n < 0)
             {
-                syslog(LOG_ERR, "Can't write to stdout: %s", strerror(errno));
+                syslog(LOG_ERR, "Can't write to target: %s", strerror(errno));
                 send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             if (n == 0)
             {
-                syslog(LOG_ERR, "stdout closed");
+                syslog(LOG_ERR, "target closed");
                 buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
         }
-        if (FD_ISSET(stdin_fileno, &fd_in))
+        if (FD_ISSET(target_in_fd, &fd_in))
         {
-            // read from stdin
-            int n = read(stdin_fileno, packet_data, mtu);
+            int n = read(target_in_fd, packet_data, mtu);
             if (n > 0)
                 packet_to_send = n;
             else if (n < 0)
             {
-                syslog(LOG_ERR, "Can't read from stdin: %s", strerror(errno));
+                syslog(LOG_ERR, "Can't read from target: %s", strerror(errno));
                 send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             else
             {
-                syslog(LOG_INFO, "stdin closed");
+                syslog(LOG_INFO, "target closed");
                 buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
