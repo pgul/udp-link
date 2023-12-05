@@ -6,6 +6,8 @@
 #include <syslog.h>
 #include <signal.h>
 #include <time.h>
+#include <ctype.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
@@ -35,6 +37,25 @@ void usage(void)
 void sigpipe(int signo)
 {
     syslog(LOG_ERR, "SIGPIPE received");
+}
+
+char **split(char *str)
+{
+    static char *words[256];
+    int i;
+
+    for (i=0; i<sizeof(words)/sizeof(words[0])-1; i++)
+    {
+        while (str[0] && isspace(str[0]))
+            *str++ = '\0';
+        if (str[0] == '\0')
+            break;
+        words[i] = str;
+        while (str[0] && !isspace(str[0]))
+            str++;
+    }
+    words[i] = NULL;
+    return words;
 }
 
 int parse_args(int argc, char *argv[])
@@ -117,36 +138,53 @@ int parse_args(int argc, char *argv[])
         /* then read port from the server and run local udp-link */
         FILE *pssh;
         char ssh_cmd[256];
-        int saved_stdin;
         FILE *new_stdin;
+        int pipe_fd[2];
         int rc;
+        pid_t pid;
 
         srand(time(NULL) ^ getpid()); rand();
         key = rand();
-        snprintf(ssh_cmd, sizeof(ssh_cmd),
-            "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link --target %s server %lu",
-            argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
-            argv[0], target[0] ? target : "127.0.0.1:22", key);
-        saved_stdin = dup(fileno(stdin));
-        new_stdin = fopen("/dev/null", "r");
-        dup2(fileno(new_stdin), fileno(stdin));
-        fclose(new_stdin);
-        pssh = popen(ssh_cmd, "r");
-        if (pssh == NULL)
-        {   fprintf(stderr, "Can't run ssh: %s\n", strerror(errno));
+        rc = pipe(pipe_fd);
+        if (rc < 0)
+        {   fprintf(stderr, "Can't create pipe: %s\n", strerror(errno));
             return 1;
         }
-        if (fgets(rport, sizeof(rport), pssh) == NULL)
-        {   fprintf(stderr, "Can't run udp-link on remote\n");
+        if (pid = fork())
+        {
+            close(pipe_fd[1]);
+            new_stdin = fdopen(pipe_fd[0], "r");
+            if (new_stdin == NULL)
+            {   fprintf(stderr, "Can't fdopen(): %s\n", strerror(errno));
+                return 1;
+            }
+            fgets(rport, sizeof(rport), new_stdin);
+            close(pipe_fd[0]);
+            waitpid(pid, &rc, 0);
+            if (rc != 0)
+            {   fprintf(stderr, "ssh exited with code %d\n", rc);
+                return 1;
+            }
+        }
+        else
+        {
+            char ** ssh_args;
+            close(pipe_fd[0]);
+            dup2(pipe_fd[1], fileno(stdout));
+            close(pipe_fd[1]);
+            snprintf(ssh_cmd, sizeof(ssh_cmd),
+                "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link --target %s server %lu",
+                argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
+                argv[0], target[0] ? target : "127.0.0.1:22", key);
+            new_stdin = fopen("/dev/null", "r");
+            dup2(fileno(new_stdin), fileno(stdin));
+            fclose(new_stdin);
+            ssh_args = split(ssh_cmd);
+            execvp("ssh", ssh_args);
+            fprintf(stderr, "Can't run ssh: %s\n", strerror(errno));
             return 1;
         }
-        rc = pclose(pssh);
-        if (rc != 0)
-        {   fprintf(stderr, "ssh exited with code %d\n", rc);
-            return 1;
-        }
-        dup2(saved_stdin, fileno(stdin));
-        close(saved_stdin);
+
         target[0] = '\0';
         p = strchr(argv[0], '@');
         if (p)

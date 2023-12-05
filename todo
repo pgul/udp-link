@@ -1,4 +1,5 @@
 - resend packet if unconfirmed too long (~0.2 s, optional or adjustable)
+- extra command-line options (log, debug)
 - readme.md, license
 - debian package
 - confirm each N (~10) packets or after ~0.1 s
@@ -7,6 +8,6 @@
 - send as batches (packet includes previous data, MSGTYPE_MDATA)
 - crypt magic, generate nonce, check nonce
 - if IP changed, perform extra authentication using key2
-- extra command-line options (mtu, cmd, window, timeout)
+- extra command-line options (mtu, window, timeout, init-timeout, target-cmd, link-cmd, ssh-cmd, bind-remote)
 - ipv6
 - msquic
