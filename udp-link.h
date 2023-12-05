@@ -25,7 +25,7 @@
 #define REASON_ERROR   1
 #define REASON_TIMEOUT 2
 
-// #define LOG            "udp-link.log"
+#define LOG            "udp-link.log"
 // #define LOG_STDOUT     1
 
 struct stored_msg {
