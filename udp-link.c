@@ -152,8 +152,6 @@ int parse_args(int argc, char *argv[])
     {   /* generate random connection key, */
         /* make ssh connection to remote, run "udp-link server" there */
         /* then read port from the server and run local udp-link */
-        FILE *pssh;
-        char ssh_cmd[256];
         FILE *new_stdin;
         int pipe_fd[2];
         int rc, i;
@@ -184,6 +182,7 @@ int parse_args(int argc, char *argv[])
         }
         else
         {
+            char ssh_cmd[1024];
             char ** ssh_args;
             close(pipe_fd[0]);
             dup2(pipe_fd[1], fileno(stdout));
