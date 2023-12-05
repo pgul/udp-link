@@ -202,7 +202,7 @@ int process_yak(unsigned short seq)
     if (cmp_seq(tail_seq, seq) > 0)
         /* it's old (obsoleted) yak */
         return 0;
-    if (cmp_seq(buf_sent.msgs[(buf_sent.head-1)%buf_sent.size].seq, seq) < 0)
+    if (cmp_seq(buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].seq, seq) < 0)
     {
         /* yak from the future (was it rollback?) */
         syslog(LOG_INFO, "Incorrect YAK, ignored");
@@ -230,7 +230,7 @@ int process_nak(unsigned short seq)
         syslog(LOG_INFO, "Incorrect (obsoleted) NAK, ignored");
         return 0;
     }
-    if (cmp_seq(buf_sent.msgs[(buf_sent.head-1)%buf_sent.size].seq, seq) < 0)
+    if (cmp_seq(buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].seq, seq) < 0)
     {
         /* nak from the future (was it rollback?) */
         syslog(LOG_INFO, "Incorrect (future) NAK, ignored");
