@@ -121,6 +121,7 @@ int parse_args(int argc, char *argv[])
         FILE *new_stdin;
         int rc;
 
+        srand(time(NULL) ^ getpid()); rand();
         key = rand();
         snprintf(ssh_cmd, sizeof(ssh_cmd),
             "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link --target %s server %lu",
