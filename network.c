@@ -48,9 +48,9 @@ int send_msg(int msgtype, ...)
             data = va_arg(ap, char *);
             memcpy(sendbuf + datalen, data, len);
             if (dump)
-                write_log(LOG_DEBUG, "Sending data packet, seq %u, len %u, data %s", seq, len, dump_data(data, len));
+                write_log(LOG_DEBUG, "Sending data packet, seq %u, len %u, data %s", ntohs(seq), len, dump_data(data, len));
             else if (debug)
-                write_log(LOG_DEBUG, "Sending data packet, seq %u, len %u", seq, len);
+                write_log(LOG_DEBUG, "Sending data packet, seq %u, len %u", ntohs(seq), len);
             datalen += len;
             break;
         case MSGTYPE_KEEPALIVE:
@@ -66,13 +66,13 @@ int send_msg(int msgtype, ...)
             seq = htons(va_arg(ap, unsigned));
             memcpy(sendbuf + datalen, &seq, sizeof(seq));
             datalen += sizeof(seq);
-            if (debug) write_log(LOG_DEBUG, "Sending yak seq %u", seq);
+            if (debug) write_log(LOG_DEBUG, "Sending yak seq %u", ntohs(seq));
             break;
         case MSGTYPE_NAK:
             seq = htons(va_arg(ap, unsigned));
             memcpy(sendbuf + datalen, &seq, sizeof(seq));
             datalen += sizeof(seq);
-            if (debug) write_log(LOG_DEBUG, "Sending nak seq %u", seq);
+            if (debug) write_log(LOG_DEBUG, "Sending nak seq %u", ntohs(seq));
             break;
         default:
             write_log(LOG_INFO, "Unknown message type: %d", msgtype);
@@ -120,14 +120,17 @@ int write_buf(int fd, buffer_t *buffer)
         n = write(fd, buffer->data + buffer->tail, buffer->size - buffer->tail);
         if (n <= 0)
             return n;
-        if (dump)
-            write_log(LOG_DEBUG, "Write %u bytes to target: %s", n, dump_data(buffer->data + buffer->tail, n));
         if (n < buffer->size - buffer->tail)
         {
+            if (dump)
+                write_log(LOG_DEBUG, "Write %u bytes to target, new tail %u: %s", n, buffer->tail+n, dump_data(buffer->data + buffer->tail, n));
             buffer->tail += n;
             return n;
         }
+        if (dump)
+            write_log(LOG_DEBUG, "Write %u bytes to target, new tail %u: %s", n, 0, dump_data(buffer->data + buffer->tail, n));
         buffer->tail = 0;
+
     }
     if (buffer->head > buffer->tail)
     {
@@ -135,7 +138,7 @@ int write_buf(int fd, buffer_t *buffer)
         if (n2 > 0)
         {
             if (dump)
-                write_log(LOG_DEBUG, "Write %u bytes to target: %s", n2, dump_data(buffer->data + buffer->tail, n2));
+                write_log(LOG_DEBUG, "Write %u bytes to target, new tail %u: %s", n2, buffer->tail+n2, dump_data(buffer->data + buffer->tail, n2));
             buffer->tail += n2;
             n += n2;
         }
@@ -143,7 +146,7 @@ int write_buf(int fd, buffer_t *buffer)
             return n2;
     }
     if (debug && !dump)
-        write_log(LOG_DEBUG, "Write %u bytes to target", n);
+        write_log(LOG_DEBUG, "Write %u bytes from buffer to target, new tail %u", n, buffer->tail);
     return n;
 }
 
@@ -199,6 +202,8 @@ int receive_data(uint16_t seq, unsigned char *data, int len)
         memcpy(buf_out.data+buf_out.head, data, len);
         buf_out.head += len;
     }
+    if (debug)
+        write_log(LOG_DEBUG, "Data saved to buffer, new head %u", buf_out.head);
     send_msg(MSGTYPE_YAK, recv_seq++);
     return 1;
 }
