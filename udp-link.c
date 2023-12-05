@@ -25,7 +25,7 @@ static int shutdown_local = 0, shutdown_remote = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
 int debug = 0, dump = 0;
-char *logfile = "write_log";
+char *logfile = "syslog";
 
 void usage(void)
 {
