@@ -23,9 +23,11 @@ char * dump_data(char *data, int len)
   return buf;
 }
 
-#ifdef LOG
 void open_log(char *name, int opt1, int opt2)
-{}
+{
+    if (strcmp(logfile, "syslog")==0)
+        openlog(name, opt1, opt2);
+}
 
 void write_log(int level, char *format, ...)
 {
@@ -36,12 +38,20 @@ void write_log(int level, char *format, ...)
   char stime[256];
   char *p;
 
-#ifdef LOG_STDOUT
-  flog=stdout;
-#else
-  flog=fopen(LOG, "a");
-  if (flog==NULL) return;
-#endif
+  if (strcmp(logfile, "syslog")==0)
+  {
+    va_start(args, format);
+    vsyslog(level, format, args);
+    va_end(args);
+    return;
+  }
+  if (strcmp(logfile, "stdout")==0)
+    flog=stdout;
+  else
+  {
+    flog=fopen(logfile, "a");
+    if (flog==NULL) return;
+  }
   curtime=time(NULL);
   curtm=localtime(&curtime);
   strcpy(stime, asctime(curtm));
@@ -61,8 +71,6 @@ void write_log(int level, char *format, ...)
   vfprintf(flog, format, args);
   va_end(args);
   fprintf(flog, "\n");
-#ifndef LOG_STDOUT
-  fclose(flog);
-#endif
+  if (strcmp(logfile, "stdout")!=0)
+    fclose(flog);
 }
-#endif

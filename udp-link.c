@@ -24,6 +24,8 @@ struct sockaddr_in remote_addr;
 static int shutdown_local = 0, shutdown_remote = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
+int debug = 0, dump = 0;
+char *logfile = "write_log";
 
 void usage(void)
 {
@@ -31,12 +33,13 @@ void usage(void)
     printf("Options:\n");
     printf("  -t, --target=IP[:PORT]  target IP address and port, default 127.0.0.1:22\n");
     printf("  -b, --bind=PORT         bind to local port PORT, default %u-%u\n", LOCAL_PORT_MIN, LOCAL_PORT_MAX);
+    printf("  -l, --log=FILE          log to FILE, default write_log\n");
     printf("  -h, --help              display this help and exit\n");
 }
 
 void sigpipe(int signo)
 {
-    syslog(LOG_ERR, "SIGPIPE received");
+    write_log(LOG_ERR, "SIGPIPE received");
 }
 
 char **split(char *str)
@@ -68,10 +71,13 @@ int parse_args(int argc, char *argv[])
         {"target", required_argument, NULL, 't'},
         {"remote", required_argument, NULL, 'r'},
         {"bind",   required_argument, NULL, 'b'},
+        {"debug",  no_argument,       NULL, 'd'},
+        {"dump",   no_argument,       NULL, 'D'},
+        {"log",    required_argument, NULL, 'l'},
         {"help",   no_argument,       NULL, 'h'},
         {0, 0, 0, 0 }
     };
-    while ((c = getopt_long(argc, argv, "t:r:b:h", long_options, NULL)) != EOF)
+    while ((c = getopt_long(argc, argv, "t:r:b:l:dDh", long_options, NULL)) != EOF)
     {
         switch (c)
         {
@@ -86,6 +92,11 @@ int parse_args(int argc, char *argv[])
                             local_port_max = atoi(p+1);
                         else
                             local_port_max = local_port_min;
+                        break;
+            case 'l':   logfile = optarg;
+                        break;
+            case 'D':   dump = 1;
+            case 'd':   debug = 1;
                         break;
             case 'h':   usage();
                         return 1;
@@ -173,9 +184,11 @@ int parse_args(int argc, char *argv[])
             dup2(pipe_fd[1], fileno(stdout));
             close(pipe_fd[1]);
             snprintf(ssh_cmd, sizeof(ssh_cmd),
-                "ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link --target %s server %lu",
+                "ssh %s-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s server %lu",
+                debug ? "-v " : "",
                 argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
-                argv[0], target[0] ? target : "127.0.0.1:22", key);
+                argv[0], debug ? "--debug " : "", target[0] ? target : "127.0.0.1:22", key);
+            if (debug) fprintf(stderr, "ssh_cmd: %s\n", ssh_cmd);
             new_stdin = fopen("/dev/null", "r");
             dup2(fileno(new_stdin), fileno(stdin));
             fclose(new_stdin);
@@ -269,7 +282,7 @@ int main(int argc, char *argv[])
     if (parse_args(argc, argv) != 0)
         return 1;
 
-    openlog("udp-link", LOG_PID, LOG_DAEMON);
+    open_log("udp-link", LOG_PID, LOG_DAEMON);
 
     buf_recv.size = buf_sent.size = BUFSIZE;
     buf_recv.msgs = malloc(buf_recv.size*sizeof(buf_recv.msgs[0]));
@@ -339,14 +352,14 @@ int main(int argc, char *argv[])
         {
             if (errno == EINTR)
                 continue;
-            syslog(LOG_ERR, "Can't select: %s", strerror(errno));
+            write_log(LOG_ERR, "Can't select: %s", strerror(errno));
             send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
             close(socket_fd);
             return 1;
         }
         if (curtime-last_received > timeout)
         {
-            syslog(LOG_ERR, "Timeout");
+            write_log(LOG_ERR, "Timeout");
             send_msg(MSGTYPE_SHUTDOWN, REASON_TIMEOUT);
             return 1;
         }
@@ -379,13 +392,13 @@ int main(int argc, char *argv[])
             int n = write_buf(target_out_fd, &buf_out);
             if (n < 0)
             {
-                syslog(LOG_ERR, "Can't write to target: %s", strerror(errno));
+                write_log(LOG_ERR, "Can't write to target: %s", strerror(errno));
                 send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             if (n == 0)
             {
-                syslog(LOG_ERR, "target closed");
+                write_log(LOG_ERR, "target closed");
                 buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
@@ -395,18 +408,21 @@ int main(int argc, char *argv[])
             int n = read(target_in_fd, packet_data, mtu);
             if (n > 0)
             {
-syslog(LOG_DEBUG, "Receive data, len %u, data %s", n, dump_data(packet_data, n));
+                if (dump)
+                    write_log(LOG_DEBUG, "Receive data, len %u, data %s", n, dump_data(packet_data, n));
+                else if (debug)
+                    write_log(LOG_DEBUG, "Receive data, len %u", n);
                 packet_to_send = n;
             }
             else if (n < 0)
             {
-                syslog(LOG_ERR, "Can't read from target: %s", strerror(errno));
+                write_log(LOG_ERR, "Can't read from target: %s", strerror(errno));
                 send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             else
             {
-                syslog(LOG_INFO, "target closed");
+                write_log(LOG_INFO, "target closed");
                 buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
@@ -416,7 +432,7 @@ syslog(LOG_DEBUG, "Receive data, len %u, data %s", n, dump_data(packet_data, n))
             int n = send_data(packet_data, packet_to_send);
             if (n < 0)
                 // try later
-                syslog(LOG_INFO, "Can't send_data: %s", strerror(errno));
+                write_log(LOG_INFO, "Can't send_data: %s", strerror(errno));
             else
             {
                 last_sent = curtime;
@@ -426,12 +442,12 @@ syslog(LOG_DEBUG, "Receive data, len %u, data %s", n, dump_data(packet_data, n))
         if (shutdown_local && buf_sent.head == buf_sent.tail && packet_to_send == 0)
         {
             send_msg(MSGTYPE_SHUTDOWN, REASON_NORMAL);
-            syslog(LOG_INFO, "Normal shutdown");
+            write_log(LOG_INFO, "Normal shutdown");
             return 0;
         }
         if (shutdown_remote && buf_out.head == buf_out.tail)
         {
-            syslog(LOG_INFO, "Remote shutdown");
+            write_log(LOG_INFO, "Remote shutdown");
             return 0;
         }
     }
