@@ -110,25 +110,25 @@ int parse_args(int argc, char *argv[])
         usage();
         return 1;
     }
-    local_port = local_port_min;
-    /* bind to free port and output it */
-    for (local_port = local_port_min; local_port <= local_port_max; local_port++)
-    {
-        socket_fd = open_socket(local_port);
-        if (socket_fd >= 0)
-            break;
-    }
-    if (socket_fd < 0)
-    {   fprintf(stderr, "Can't bind to any port in range %d-%d\n", local_port_min, local_port_max);
-        return 1;
-    }
     if (strcmp(argv[0], "server") == 0)
     {
         if (!argv[1])
-        {
-            fprintf(stderr, "second parameter (key) required for server mode\n");
+        {   fprintf(stderr, "second parameter (key) required for server mode\n");
             return 1;
         }
+        local_port = local_port_min;
+        /* bind to free port and output it */
+        for (local_port = local_port_min; local_port <= local_port_max; local_port++)
+        {
+            socket_fd = open_socket(local_port);
+            if (socket_fd >= 0)
+                break;
+        }
+        if (socket_fd < 0)
+        {   fprintf(stderr, "Can't bind to any port in range %d-%d\n", local_port_min, local_port_max);
+            return 1;
+        }
+
         fprintf(stdout, "%hu\n", local_port);
         fflush(stdout);
         key = atoi(argv[1]);
@@ -137,11 +137,16 @@ int parse_args(int argc, char *argv[])
     else if (strcmp(argv[0], "client") == 0)
     {
         if (!argv[1])
-        {
-            fprintf(stderr, "second parameter (key) required for client mode\n");
+        {   fprintf(stderr, "second parameter (key) required for client mode\n");
             return 1;
         }
         key = atoi(argv[1]);
+        local_port = local_port_min;
+        socket_fd = open_socket(local_port);
+        if (socket_fd < 0)
+        {   fprintf(stderr, "Can't bind to any port in range %d-%d\n", local_port_min, local_port_max);
+            return 1;
+        }
     }
     else
     {   /* generate random connection key, */
@@ -151,7 +156,7 @@ int parse_args(int argc, char *argv[])
         char ssh_cmd[256];
         FILE *new_stdin;
         int pipe_fd[2];
-        int rc;
+        int rc, i;
         pid_t pid;
 
         srand(time(NULL) ^ getpid()); rand();
@@ -184,10 +189,11 @@ int parse_args(int argc, char *argv[])
             dup2(pipe_fd[1], fileno(stdout));
             close(pipe_fd[1]);
             snprintf(ssh_cmd, sizeof(ssh_cmd),
-                "ssh %s-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s server %lu",
+                "ssh %s-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u server %lu",
                 debug ? "-v " : "",
                 argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
-                argv[0], debug ? "--debug " : "", target[0] ? target : "127.0.0.1:22", key);
+                argv[0], debug ? "--debug " : "", target[0] ? target : "127.0.0.1:22",
+                local_port_min, local_port_max, key);
             if (debug) fprintf(stderr, "ssh_cmd: %s\n", ssh_cmd);
             new_stdin = fopen("/dev/null", "r");
             dup2(fileno(new_stdin), fileno(stdin));
@@ -207,6 +213,17 @@ int parse_args(int argc, char *argv[])
         remote[sizeof(remote)-strlen(rport)-2] = '\0';
         strcat(remote, ":");
         strcat(remote, rport);
+        for (i=0; i<8; i++)
+        {
+            local_port = 40000 + rand()%20000;
+            socket_fd = open_socket(local_port);
+            if (socket_fd >= 0)
+                break;
+        }
+        if (socket_fd < 0)
+        {   fprintf(stderr, "Can't bind to any port in range 40000-60000\n");
+            return 1;
+        }
     }
     if (target[0])
     {
