@@ -427,9 +427,7 @@ int init_connection(void)
                 return -1;
             if (n == 0)
                 continue;
-            if (msgtype == MSGTYPE_INIT)
-                send_msg(MSGTYPE_INIT2);
-            else
+            if (msgtype != MSGTYPE_INIT)
                 break;
         }
     }
