@@ -33,6 +33,8 @@ QUIC protocol was developed exactly for this purpose, but implementations quicss
 I did not found any program for this which satisfied me, but spent much time in ssh, often with unstable or changing network, so I decided to create my own ssh proxy for make my ssh connections reliable.
 May be I'll change UDP-layer to msquic library if found enough reasons for this.
 
+In difference from mosh and Eternal Terminal, this program does not encrypt traffic. It is intended to be used with ssh, which encrypts traffic itself, and double encryption is not needed. It just change tcp transport layer to udp with increased reliability. Randomly choosed session key is used to protect udp link from unauthorized intrusions.
+
 ## License
 
 © 2023 [Pavlo Gulchuk](https://gul.kiev.ua)

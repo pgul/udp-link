@@ -206,7 +206,7 @@ int parse_args(int argc, char *argv[])
             dup2(pipe_fd[1], fileno(stdout));
             close(pipe_fd[1]);
             snprintf(ssh_cmd, sizeof(ssh_cmd),
-                "ssh %s-o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u server %lu",
+                "ssh %s-o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u server %lu",
                 debug ? "-v " : "",
                 argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
                 argv[0], debug ? "--debug " : "", target[0] ? target : "127.0.0.1:22",
