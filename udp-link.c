@@ -384,7 +384,9 @@ int main(int argc, char *argv[])
             return 1;
         }
         if (curtime > last_sent+keepalive_interval && !packet_to_send)
-            send_msg(MSGTYPE_KEEPALIVE);
+        {   send_msg(MSGTYPE_KEEPALIVE);
+            last_sent = curtime;
+        }
         if (fds[0].revents & POLLNVAL)
         {
             write_log(LOG_ERR, "invalid socket");
