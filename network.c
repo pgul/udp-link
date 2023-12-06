@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <errno.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <syslog.h>
@@ -394,18 +395,13 @@ int init_connection(void)
     }
     while (1)
     {
-        fd_set fd_in, fd_out;
-        struct timeval tm;
-        int r, maxfd;
+        struct pollfd fds[1];
+        int r;
         time_t curtime;
 
-        FD_ZERO(&fd_in);
-        FD_ZERO(&fd_out);
-        maxfd = socket_fd+1;
-        FD_SET(socket_fd, &fd_in);
-        tm.tv_sec = 0;
-        tm.tv_usec = RESEND_INIT * 1000;
-        r = select(maxfd, &fd_in, &fd_out, NULL, &tm);
+        fds[0].fd = socket_fd;
+        fds[0].events = POLLIN;
+        r = poll(fds, 1, RESEND_INIT);
         if (r < 0)
         {
             fprintf(stderr, "select() failed: %s", strerror(errno));
@@ -426,7 +422,7 @@ int init_connection(void)
             }
             continue;
         }
-        if (FD_ISSET(socket_fd, &fd_in))
+        if (fds[0].revents & POLLIN)
         {
             int msgtype;
             int n = read_msg(&msgtype);

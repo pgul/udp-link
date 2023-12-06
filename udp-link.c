@@ -371,7 +371,7 @@ int main(int argc, char *argv[])
         {
             if (errno == EINTR)
                 continue;
-            write_log(LOG_ERR, "Can't select: %s", strerror(errno));
+            write_log(LOG_ERR, "Can't poll: %s", strerror(errno));
             send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
             close(socket_fd);
             return 1;
