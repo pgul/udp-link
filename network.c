@@ -154,13 +154,17 @@ int write_buf(int fd, buffer_t *buffer)
 int send_data(char *data, int len)
 {
     static uint16_t seq = 0;
+    int rc;
     memcpy(buf_sent.msgs[buf_sent.head].data, data, len);
     buf_sent.msgs[buf_sent.head].seq = seq;
     buf_sent.msgs[buf_sent.head].len = len;
     buf_sent.msgs[buf_sent.head].yak = 0;
     buf_sent.msgs[buf_sent.head].timestamp = time_ms();
     buf_sent.head = (buf_sent.head+1)%buf_sent.size;
-    return send_msg(MSGTYPE_DATA, seq++, len, data);
+    rc = send_msg(MSGTYPE_DATA, seq, len, data);
+    if (rc > 0)
+        seq++;
+    return rc;
 }
 
 /* seq is resetting after 65546, so we need be careful on comparation */
