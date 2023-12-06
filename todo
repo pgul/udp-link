@@ -1,17 +1,14 @@
-- readme.md, license
 - debian package
 - send version in init packet
 - confirm each N (~10) packets or after ~0.1 s
 - log about change remote IP
-- get curtime as gettimeofday, calculate select timeout in milliseconts
 - packet reordering
 - forward tcp port like "ssh -R" or "ssh -L"
-- sparse data, autorecovery lost packets
 - send as batches (packet includes previous data, MSGTYPE_MDATA), including resend after timeout or nak
 - crypt magic, generate nonce, check nonce
 - process shutdown only from remote ip (not from new one)
 - hide key from command line
 - if IP changed, perform extra authentication using key2
-- extra command-line options (mtu, window, timeout, init-timeout, target-cmd, link-cmd, ssh-cmd, bind-remote)
+- extra command-line options (mtu, window, timeout, init-timeout, resend-time, target-cmd, link-cmd, ssh-cmd, bind-remote-port)
 - ipv6
 - msquic: https://github.com/microsoft/msquic
