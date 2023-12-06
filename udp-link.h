@@ -24,6 +24,7 @@
 #define REASON_NORMAL  0
 #define REASON_ERROR   1
 #define REASON_TIMEOUT 2
+#define REASON_KILLED  3
 
 struct stored_msg {
     unsigned short int seq;

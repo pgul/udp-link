@@ -22,7 +22,7 @@ buf_pkt_t buf_recv; /* currently unused */
 buf_pkt_t buf_sent;
 buffer_t buf_out;
 struct sockaddr_in remote_addr;
-static int shutdown_local = 0, shutdown_remote = 0;
+static int shutdown_local = 0, shutdown_remote = 0, killed = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
 static struct timeval tv_start;
@@ -44,6 +44,12 @@ void sigpipe(int signo)
     write_log(LOG_ERR, "SIGPIPE received");
 }
 
+void sighup_handler(int signo)
+{
+    write_log(LOG_INFO, "SIGHUP received");
+    shutdown_local = 1;
+}
+
 void signal_handler(int signo)
 {
     static char signame[32] = "SIG";
@@ -53,6 +59,9 @@ void signal_handler(int signo)
         *p = toupper(*p);
     write_log(LOG_INFO, "%s received", signame);
     shutdown_local = 1;
+    killed = signo;
+    /* purge output buffer by signal */
+    buf_sent.head = buf_sent.tail = 0;
 }
 
 char **split(char *str)
@@ -360,7 +369,7 @@ int main(int argc, char *argv[])
     sigaction(SIGPIPE, &(struct sigaction){.sa_handler=sigpipe, .sa_flags=SA_RESTART}, NULL);
     signal(SIGTERM, signal_handler);
     signal(SIGINT,  signal_handler);
-    signal(SIGHUP,  signal_handler);
+    signal(SIGHUP,  sighup_handler);
 
     if (gettimeofday(&tv_start, NULL) < 0)
     {   write_log(LOG_ERR, "Can't gettimeofday(): %s", strerror(errno));
@@ -390,7 +399,7 @@ int main(int argc, char *argv[])
             fds[1].events |= POLLIN;
         if (buf_out.head != buf_out.tail && !shutdown_local)
             fds[fds_out_ndx].events |= POLLOUT;
-        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote)
+        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote && !killed)
             /* we have space for at least one packet */
             fds[0].events |= POLLIN;
         /* Assume we always can write to socket */
@@ -500,6 +509,9 @@ int main(int argc, char *argv[])
                 send_msg(MSGTYPE_DATA, buf_sent.msgs[n].seq, buf_sent.msgs[n].len, buf_sent.msgs[n].data);
                 buf_sent.msgs[n].timestamp = curtime;
             }
+            /* special case: if local end shutdowned, purge output, b/c connection to remote may be lost */
+            if (shutdown_local)
+                buf_sent.head = buf_sent.tail = 0;
         }
         if ((fds[1].revents & POLLIN) && !shutdown_local)
         {
@@ -536,7 +548,12 @@ int main(int argc, char *argv[])
                 packet_to_send = 0;
             }
         }
-        if (shutdown_local && buf_sent.head == buf_sent.tail && packet_to_send == 0)
+        if (killed)
+        {
+            send_msg(MSGTYPE_SHUTDOWN, REASON_KILLED);
+            return 2;
+        }
+        if (shutdown_local && buf_sent.head == buf_sent.tail)
         {
             send_msg(MSGTYPE_SHUTDOWN, REASON_NORMAL);
             write_log(LOG_INFO, "Normal shutdown");
