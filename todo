@@ -9,6 +9,8 @@
 - sparse data, autorecovery lost packets
 - send as batches (packet includes previous data, MSGTYPE_MDATA)
 - crypt magic, generate nonce, check nonce
+- process shutdown only from remote ip (not from new one)
+- hide key from command line
 - if IP changed, perform extra authentication using key2
 - extra command-line options (mtu, window, timeout, init-timeout, target-cmd, link-cmd, ssh-cmd, bind-remote)
 - ipv6
