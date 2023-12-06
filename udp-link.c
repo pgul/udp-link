@@ -178,12 +178,13 @@ int parse_args(int argc, char *argv[])
                 return 1;
             }
             str = fgets(rport, sizeof(rport), new_stdin);
-            close(pipe_fd[0]);
+            fclose(new_stdin);
             waitpid(pid, &rc, 0);
             if (rc != 0 || str == NULL)
             {   fprintf(stderr, "ssh exited with code %d\n", rc);
                 return 1;
             }
+            if (debug) fprintf(stderr, "remote port: %s", rport);
         }
         else
         {
