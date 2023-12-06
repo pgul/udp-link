@@ -421,7 +421,7 @@ int main(int argc, char *argv[])
             close(socket_fd);
             return 1;
         }
-        curtime = time(NULL);
+        curtime = time_ms();
         if (curtime > last_received+timeout)
         {
             write_log(LOG_ERR, "Timeout");
