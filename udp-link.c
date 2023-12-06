@@ -25,7 +25,7 @@ static int shutdown_local = 0, shutdown_remote = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
 int debug = 0, dump = 0;
-char *logfile = "syslog";
+char *logfile = "/home/gul/work/udp-link/udp-link.log";
 
 void usage(void)
 {
@@ -132,7 +132,10 @@ int parse_args(int argc, char *argv[])
         fprintf(stdout, "%hu\n", local_port);
         fflush(stdout);
         key = atoi(argv[1]);
-        daemon(0, 0);
+        if (daemon(0, 0) < 0)
+        {   fprintf(stderr, "Error daemonizing: %s", strerror(errno));
+            return 1;
+        }
     }
     else if (strcmp(argv[0], "client") == 0)
     {
@@ -166,16 +169,17 @@ int parse_args(int argc, char *argv[])
         }
         if ((pid=fork()))
         {
+            char *str;
             close(pipe_fd[1]);
             new_stdin = fdopen(pipe_fd[0], "r");
             if (new_stdin == NULL)
             {   fprintf(stderr, "Can't fdopen(): %s\n", strerror(errno));
                 return 1;
             }
-            fgets(rport, sizeof(rport), new_stdin);
+            str = fgets(rport, sizeof(rport), new_stdin);
             close(pipe_fd[0]);
             waitpid(pid, &rc, 0);
-            if (rc != 0)
+            if (rc != 0 || str == NULL)
             {   fprintf(stderr, "ssh exited with code %d\n", rc);
                 return 1;
             }
