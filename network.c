@@ -158,7 +158,7 @@ int send_data(char *data, int len)
     buf_sent.msgs[buf_sent.head].len = len;
     buf_sent.msgs[buf_sent.head].yak = 0;
     gettimeofday(&buf_sent.msgs[buf_sent.head].timestamp, NULL);
-    buf_sent.head++;
+    buf_sent.head = (buf_sent.head+1)%buf_sent.size;
     return send_msg(MSGTYPE_DATA, seq++, len, data);
 }
 
@@ -219,7 +219,7 @@ int process_yak(unsigned short seq)
     tail_seq = buf_sent.msgs[buf_sent.tail].seq;
     if (tail_seq == seq)
     {
-        buf_sent.tail++;
+        buf_sent.tail = (buf_sent.tail+1)%buf_sent.size;
         return 0;
     }
     if (cmp_seq(tail_seq, seq) > 0)
@@ -234,6 +234,7 @@ int process_yak(unsigned short seq)
     /* all packets from tail to seq are confirmed */
     buf_sent.tail += seq>tail_seq ? seq-tail_seq+1 : seq+0x10000u-tail_seq+1;
     buf_sent.tail %= buf_sent.size;
+    return 0;
 }
 
 int process_nak(unsigned short seq)
@@ -243,24 +244,26 @@ int process_nak(unsigned short seq)
 
     if (buf_sent.head==buf_sent.tail)
     {
-        write_log(LOG_INFO, "Incorrect NAK (buffer is empty), ignored");
+        write_log(LOG_INFO, "Incorrect NAK (buffer is empty) seq %u, ignored", seq);
         return 0;
     }
     tail_seq = buf_sent.msgs[buf_sent.tail].seq;
     if (cmp_seq(tail_seq, seq) > 0)
     {
         /* it's old (obsoleted) nak */
-        write_log(LOG_INFO, "Incorrect (obsoleted) NAK, ignored");
+        write_log(LOG_INFO, "Incorrect (obsoleted) NAK seq %u, ignored", seq);
         return 0;
     }
     if (cmp_seq(buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].seq, seq) < 0)
     {
         /* nak from the future (was it rollback?) */
-        write_log(LOG_INFO, "Incorrect (future) NAK, ignored");
+        write_log(LOG_INFO, "Incorrect (future) NAK seq %u, ignored", seq);
         return 0;
     }
     /* resend all packets from the seq to the head */
-    write_log(LOG_INFO, "Received NAK, resend packets from %u to %u", seq, buf_sent.msgs[(buf_sent.head-1)%buf_sent.size].seq);
+    if (debug)
+        write_log(LOG_DEBUG, "Received NAK, resend packets from %u to %u", seq,
+            buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].seq);
     ndx = (buf_sent.tail + (seq>tail_seq ? seq-tail_seq : seq+0x10000u-tail_seq)) % buf_sent.size;
     do
     {
@@ -278,7 +281,7 @@ int read_msg(int *msgtype_p)
 	struct sockaddr_in remote;
     uint32_t magic;
     uint16_t seq;
-    int len, n, rc, msgtype;
+    int n, rc, msgtype;
     unsigned char reason;
     unsigned int sl;
 
@@ -366,7 +369,6 @@ int read_msg(int *msgtype_p)
                 return -1;
             }
             seq = ntohs(*(uint16_t *)pdata);
-            if (debug) write_log(LOG_DEBUG, "Received nak seq %u", seq);
             process_nak(seq);
             break;
         default:

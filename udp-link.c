@@ -206,9 +206,9 @@ int parse_args(int argc, char *argv[])
         target[0] = '\0';
         p = strchr(argv[0], '@');
         if (p)
-            strncpy(remote, p+1, sizeof(remote));
+            strncpy(remote, p+1, sizeof(remote)-1);
         else
-            strncpy(remote, argv[0], sizeof(remote));
+            strncpy(remote, argv[0], sizeof(remote)-1);
         remote[sizeof(remote)-strlen(rport)-2] = '\0';
         strcat(remote, ":");
         strcat(remote, rport);

@@ -5,6 +5,7 @@
 - send version in init packet
 - confirm each N (~10) packets or after ~0.1 s
 - packet reordering
+- forward tcp port like "ssh -R" or "ssh -L"
 - sparse data, autorecovery lost packets
 - send as batches (packet includes previous data, MSGTYPE_MDATA)
 - crypt magic, generate nonce, check nonce
