@@ -25,6 +25,7 @@ struct sockaddr_in remote_addr;
 static int shutdown_local = 0, shutdown_remote = 0;
 static int target_in_fd, target_out_fd;
 static short local_port;
+static struct timeval tv_start;
 int debug = 0, dump = 0;
 char *logfile = "syslog";
 
@@ -304,6 +305,30 @@ int parse_args(int argc, char *argv[])
     return 0;
 }
 
+unsigned int time_ms(void)
+{
+    struct timeval tv;
+    if (gettimeofday(&tv, NULL) < 0)
+    {   write_log(LOG_ERR, "Can't gettimeofday(): %s", strerror(errno));
+        return 0;
+    }
+    if (tv.tv_sec < tv_start.tv_sec || (tv.tv_sec == tv_start.tv_sec && tv.tv_usec < tv_start.tv_usec))
+    {   write_log(LOG_ERR, "Time went backwards");
+        memcpy(&tv_start, &tv, sizeof(tv_start));
+        return 0;
+    }
+    if (tv.tv_sec > tv_start.tv_sec + 30*24*3600)
+    {   // We use 32-bit unsigned int for time_ms, so we can't handle more than 30 days
+        write_log(LOG_INFO, "Time went forward more than 30 days, restarting");
+        memcpy(&tv_start, &tv, sizeof(tv_start));
+        return 0;
+    }
+    if (tv.tv_usec >= tv_start.tv_usec)
+        return (tv.tv_sec-tv_start.tv_sec)*1000 + (tv.tv_usec-tv_start.tv_usec)/1000;
+    else
+        return (tv.tv_sec-tv_start.tv_sec-1)*1000 + (tv.tv_usec+1000000-tv_start.tv_usec)/1000;
+}
+
 int main(int argc, char *argv[])
 {
     time_t last_sent, last_received;
@@ -311,7 +336,7 @@ int main(int argc, char *argv[])
     char *packet_data;
     unsigned int keepalive_interval = KEEPALIVE_INTERVAL;
     unsigned int timeout = TIMEOUT;
-    time_t curtime;
+    unsigned int curtime;
 
     if (parse_args(argc, argv) != 0)
         return 1;
@@ -337,10 +362,15 @@ int main(int argc, char *argv[])
     signal(SIGINT,  signal_handler);
     signal(SIGHUP,  signal_handler);
 
+    if (gettimeofday(&tv_start, NULL) < 0)
+    {   write_log(LOG_ERR, "Can't gettimeofday(): %s", strerror(errno));
+        return 1;
+    }
+
     if (init_connection() != 0)
         return 3;
 
-    curtime = last_sent = last_received = time(NULL);
+    curtime = last_sent = last_received = time_ms();
 
     while (1)
     {
@@ -368,7 +398,7 @@ int main(int argc, char *argv[])
             last_sent = curtime;
         if (last_received > curtime)
             last_received = curtime;
-        if (packet_to_send)
+        if (packet_to_send || buf_sent.head != buf_sent.tail)
             poll_timeout = RESEND_INTERVAL;
         else
         {   /* keepalive is mandatory */
@@ -376,10 +406,10 @@ int main(int argc, char *argv[])
             if (timeout)
             {
                 int timeout_received = timeout>=curtime-last_received ? timeout-(curtime-last_received) : 0;
-                poll_timeout = timeout_sent>timeout_received ? timeout_received*1000 : timeout_sent*1000;
+                poll_timeout = timeout_sent>timeout_received ? timeout_received : timeout_sent;
             }
             else
-                poll_timeout = timeout_sent*1000;
+                poll_timeout = timeout_sent;
         }
         r = poll(fds, fds_out_ndx+1, poll_timeout);
         if (r < 0)
@@ -457,6 +487,18 @@ int main(int argc, char *argv[])
             {
                 write_log(LOG_INFO, "target closed (0 bytes wrote)");
                 shutdown_local = 1;
+            }
+        }
+        if (buf_sent.head != buf_sent.tail && buf_sent.msgs[buf_sent.tail].timestamp+RESEND_INTERVAL < curtime)
+        {
+            /* No confirmation for sent packets during RESEND_INTERVAL, resend */
+            int n;
+            for (n=buf_sent.tail; n!=buf_sent.head; n=(n+1)%buf_sent.size)
+            {
+                if (debug)
+                    write_log(LOG_DEBUG, "Resend packet %u", buf_sent.msgs[n].seq);
+                send_msg(MSGTYPE_DATA, buf_sent.msgs[n].seq, buf_sent.msgs[n].len, buf_sent.msgs[n].data);
+                buf_sent.msgs[n].timestamp = curtime;
             }
         }
         if ((fds[1].revents & POLLIN) && !shutdown_local)

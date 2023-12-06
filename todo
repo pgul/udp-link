@@ -1,5 +1,3 @@
-- resend packet if unconfirmed too long (~0.2 s, optional or adjustable)
-- extra command-line options (log, debug)
 - readme.md, license
 - debian package
 - send version in init packet
@@ -9,7 +7,7 @@
 - packet reordering
 - forward tcp port like "ssh -R" or "ssh -L"
 - sparse data, autorecovery lost packets
-- send as batches (packet includes previous data, MSGTYPE_MDATA)
+- send as batches (packet includes previous data, MSGTYPE_MDATA), including resend after timeout or nak
 - crypt magic, generate nonce, check nonce
 - process shutdown only from remote ip (not from new one)
 - hide key from command line

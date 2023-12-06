@@ -158,7 +158,7 @@ int send_data(char *data, int len)
     buf_sent.msgs[buf_sent.head].seq = seq;
     buf_sent.msgs[buf_sent.head].len = len;
     buf_sent.msgs[buf_sent.head].yak = 0;
-    gettimeofday(&buf_sent.msgs[buf_sent.head].timestamp, NULL);
+    buf_sent.msgs[buf_sent.head].timestamp = time_ms();
     buf_sent.head = (buf_sent.head+1)%buf_sent.size;
     return send_msg(MSGTYPE_DATA, seq++, len, data);
 }
@@ -386,7 +386,6 @@ int init_connection(void)
 {
     /* send MSGTIME_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
     /* Answer MSGTYPE_INIT2 on all MSGTYPE_INIT during init stage */
-    time_t start = time(NULL);
 
     if (remote_addr.sin_addr.s_addr)
     {
@@ -397,7 +396,7 @@ int init_connection(void)
     {
         struct pollfd fds[1];
         int r;
-        time_t curtime;
+        unsigned int curtime;
 
         fds[0].fd = socket_fd;
         fds[0].events = POLLIN;
@@ -409,8 +408,8 @@ int init_connection(void)
         }
         if (r == 0)
         {
-            curtime = time(NULL);
-            if (curtime - start > TIMEOUT_INIT)
+            curtime = time_ms();
+            if (curtime > TIMEOUT_INIT)
             {
                 fprintf(stderr, "Timeout waiting for connection\n");
                 return -1;

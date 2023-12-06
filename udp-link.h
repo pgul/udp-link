@@ -1,14 +1,14 @@
 #include <sys/types.h>
 #include <sys/time.h>
 
-#define RESEND_INTERVAL    100     // ms
-#define KEEPALIVE_INTERVAL 60      // s
-#define TIMEOUT            18*3600 // 18 hours
+#define RESEND_INTERVAL    500     // ms
+#define KEEPALIVE_INTERVAL 60*1000 // ms
+#define TIMEOUT            18*3600*1000 // 18 hours
 #define BUFSIZE            64      // packets
 #define BUF2SIZE           65536   // bytes
 #define MTU                1400    // bytes
-#define RESEND_INIT        100     // ms
-#define TIMEOUT_INIT       5       // s
+#define RESEND_INIT        500     // ms
+#define TIMEOUT_INIT       5*1000  // ms
 #define DATA_HEADER_SIZE   6       // bytes: magic(4), seq(2)
 #define LOCAL_PORT_MIN     43200
 #define LOCAL_PORT_MAX     44000
@@ -16,7 +16,7 @@
 #define MSGTYPE_INIT      0
 #define MSGTYPE_INIT2     1
 #define MSGTYPE_DATA      2
-#define MSGTYPE_YAK       3
+#define MSGTYPE_YAK       3 // Ox
 #define MSGTYPE_NAK       4 // yak female
 #define MSGTYPE_KEEPALIVE 5
 #define MSGTYPE_SHUTDOWN  6
@@ -28,7 +28,7 @@
 struct stored_msg {
     unsigned short int seq;
     unsigned short int len;
-    struct timeval timestamp;
+    unsigned int timestamp;
     unsigned int yak;
     char data[MTU];
 };
@@ -53,7 +53,8 @@ int  send_msg(int msgtype, ...);
 int  send_data(char *data, int len);
 int  write_buf(int fd, buffer_t *buffer);
 int  read_msg(int *msgtype);
-int  init_connection();
+int  init_connection(void);
+unsigned int time_ms(void);
 char *dump_data(char *buf, int len);
 
 void write_log(int level, char *fmt, ...);
