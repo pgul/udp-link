@@ -43,9 +43,14 @@ void sigpipe(int signo)
     write_log(LOG_ERR, "SIGPIPE received");
 }
 
-void term_handler(int signo)
+void signal_handler(int signo)
 {
-    write_log(LOG_INFO, "SIGTERM received");
+    static char signame[32] = "SIG";
+    char *p;
+    strncpy(signame+3, strsignal(signo), sizeof(signame)-4);
+    for (p=signame+3; *p; p++)
+        *p = toupper(*p);
+    write_log(LOG_INFO, "%s received", signame);
     shutdown_local = 1;
 }
 
@@ -328,8 +333,9 @@ int main(int argc, char *argv[])
     buf_out.head  = buf_out.tail  = 0;
 
     sigaction(SIGPIPE, &(struct sigaction){.sa_handler=sigpipe, .sa_flags=SA_RESTART}, NULL);
-    signal(SIGTERM, term_handler);
-    signal(SIGINT,  term_handler);
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT,  signal_handler);
+    signal(SIGHUP,  signal_handler);
 
     if (init_connection() != 0)
         return 3;
