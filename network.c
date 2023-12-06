@@ -185,7 +185,7 @@ int receive_data(uint16_t seq, char *data, int len)
         if (cmp_seq(seq, recv_seq) > 0)
         {
             write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
-            send_msg(MSGTYPE_NAK, seq);
+            send_msg(MSGTYPE_NAK, recv_seq);
         }
         else
             write_log(LOG_INFO, "Received data packet with seq %u, expected %u, ignored", seq, recv_seq);
