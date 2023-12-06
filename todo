@@ -1,4 +1,3 @@
-- debian package
 - send version in init packet
 - confirm each N (~10) packets or after ~0.1 s
 - log about change remote IP
