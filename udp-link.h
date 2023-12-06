@@ -30,7 +30,7 @@ struct stored_msg {
     unsigned short int len;
     struct timeval timestamp;
     unsigned int yak;
-    unsigned char data[MTU];
+    char data[MTU];
 };
 typedef struct buffer_pkt {
     unsigned int head;
@@ -44,7 +44,7 @@ typedef struct buffer {
     unsigned int head;
     unsigned int tail;
     unsigned int size;
-    unsigned char *data;
+    char *data;
 } buffer_t;
 
 int  open_socket(short port);

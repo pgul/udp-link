@@ -14,4 +14,4 @@ udp-link: $(OBJS) Makefile
 *.o:	Makefile udp-link.h
 
 .c.o:
-	$(CC) -c $(COPT) -o $@ $<
+	$(CC) -c $(CFLAGS) -o $@ $<

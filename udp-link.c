@@ -88,7 +88,7 @@ int parse_args(int argc, char *argv[])
                         remote[sizeof(remote)-1] = '\0';
                         break;
             case 'b':   local_port_min = atoi(optarg);
-                        if (p=strchr(optarg, '-'))
+                        if ((p=strchr(optarg, '-')) != 0)
                             local_port_max = atoi(p+1);
                         else
                             local_port_max = local_port_min;
@@ -164,7 +164,7 @@ int parse_args(int argc, char *argv[])
         {   fprintf(stderr, "Can't create pipe: %s\n", strerror(errno));
             return 1;
         }
-        if (pid = fork())
+        if ((pid=fork()))
         {
             close(pipe_fd[1]);
             new_stdin = fdopen(pipe_fd[0], "r");

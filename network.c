@@ -172,7 +172,7 @@ int cmp_seq(unsigned short seq1, unsigned short seq2)
     return 0;
 }
 
-int receive_data(uint16_t seq, unsigned char *data, int len)
+int receive_data(uint16_t seq, char *data, int len)
 {
     static uint16_t recv_seq = 0;
     if (len > mtu)
@@ -273,8 +273,8 @@ int process_nak(unsigned short seq)
 
 int read_msg(int *msgtype_p)
 {
-    unsigned char databuf[MTU];
-    unsigned char *pdata;
+    char databuf[MTU];
+    char *pdata;
 	struct sockaddr_in remote;
     uint32_t magic;
     uint16_t seq;
