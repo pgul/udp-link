@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <time.h>
 #include <ctype.h>
+#include <poll.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -298,6 +299,7 @@ int main(int argc, char *argv[])
     char *packet_data;
     unsigned int keepalive_interval = KEEPALIVE_INTERVAL;
     unsigned int timeout = TIMEOUT;
+    time_t curtime;
 
     if (parse_args(argc, argv) != 0)
         return 1;
@@ -327,55 +329,44 @@ int main(int argc, char *argv[])
 
     while (1)
     {
-        fd_set fd_in, fd_out;
-        struct timeval tm;
-        int r, maxfd;
-        time_t curtime;
+        struct pollfd fds[3];
+        int fds_out_ndx = target_in_fd == target_out_fd ? 1 : 2;
+        int poll_timeout;
+        int r;
 
-        FD_ZERO(&fd_in);
-        FD_ZERO(&fd_out);
-        maxfd = 0;
+        fds[0].fd = socket_fd;
+        fds[0].events = 0;
+        fds[1].fd = target_in_fd;
+        fds[1].events = 0;
+        fds[2].fd = target_out_fd;
+        fds[2].events = 0;
+
         if (packet_to_send == 0 && (buf_sent.head+1)%buf_sent.size != buf_sent.tail && !shutdown_remote && !shutdown_local)
-        {
-            FD_SET(target_in_fd, &fd_in);
-            if (target_in_fd > maxfd)
-                maxfd = target_in_fd;
-        }
+            fds[1].events |= POLLIN;
         if (buf_out.head != buf_out.tail && !shutdown_local)
-        {
-            FD_SET(target_out_fd, &fd_out);
-            if (target_out_fd > maxfd)
-                maxfd = target_out_fd;
-        }
+            fds[fds_out_ndx].events |= POLLOUT;
         if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote)
-        {   /* we have space for at least one packet */
-            FD_SET(socket_fd, &fd_in);
-            if (socket_fd > maxfd)
-                maxfd = socket_fd;
-        }
+            /* we have space for at least one packet */
+            fds[0].events |= POLLIN;
         /* Assume we always can write to socket */
         if (last_sent > curtime)
             last_sent = curtime;
         if (last_received > curtime)
             last_received = curtime;
         if (packet_to_send)
-        {
-            tm.tv_sec=0;
-            tm.tv_usec=RESEND_INTERVAL*1000;
-        }
+            poll_timeout = RESEND_INTERVAL;
         else
         {   /* keepalive is mandatory */
             int timeout_sent = keepalive_interval>=curtime-last_sent ? keepalive_interval-(curtime-last_sent) : 0;
             if (timeout)
             {
                 int timeout_received = timeout>=curtime-last_received ? timeout-(curtime-last_received) : 0;
-                tm.tv_sec = timeout_sent>timeout_received ? timeout_received : timeout_sent;
+                poll_timeout = timeout_sent>timeout_received ? timeout_received*1000 : timeout_sent*1000;
             }
             else
-                tm.tv_sec = timeout_sent;
-            tm.tv_usec=0;
+                poll_timeout = timeout_sent*1000;
         }
-        r = select(maxfd+1, &fd_in, &fd_out, NULL, &tm);
+        r = poll(fds, fds_out_ndx+1, poll_timeout);
         if (r < 0)
         {
             if (errno == EINTR)
@@ -394,7 +385,19 @@ int main(int argc, char *argv[])
         }
         if (curtime > last_sent+keepalive_interval && !packet_to_send)
             send_msg(MSGTYPE_KEEPALIVE);
-        if (FD_ISSET(socket_fd, &fd_in))
+        if (fds[0].revents & POLLNVAL)
+        {
+            write_log(LOG_ERR, "invalid socket");
+            shutdown_remote = 1;
+            buf_sent.head = buf_sent.tail = 0;
+        }
+        if (fds[0].revents & POLLHUP)
+        {
+            write_log(LOG_ERR, "socket closed");
+            shutdown_remote = 1;
+            buf_sent.head = buf_sent.tail = 0;
+        }
+        if (fds[0].revents & POLLIN)
         {
             int msgtype;
             int n = read_msg(&msgtype);
@@ -416,7 +419,21 @@ int main(int argc, char *argv[])
                     buf_out.head = buf_out.tail = 0;
             }
         }
-        if (FD_ISSET(target_out_fd, &fd_out))
+        if ((fds[1].revents & POLLHUP) || (fds[fds_out_ndx].revents & POLLHUP))
+        {
+            write_log(LOG_ERR, "target closed");
+            send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+            buf_out.head = buf_out.tail = 0;
+            shutdown_local = 1;
+        }
+        if ((fds[1].revents & POLLNVAL) || (fds[fds_out_ndx].revents & POLLNVAL))
+        {
+            write_log(LOG_ERR, "target invalid");
+            send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+            buf_out.head = buf_out.tail = 0;
+            shutdown_local = 1;
+        }
+        if (fds[fds_out_ndx].revents & POLLOUT)
         {
             int n = write_buf(target_out_fd, &buf_out);
             if (n < 0)
@@ -432,7 +449,7 @@ int main(int argc, char *argv[])
                 shutdown_local = 1;
             }
         }
-        if (FD_ISSET(target_in_fd, &fd_in))
+        if (fds[1].revents & POLLIN)
         {
             int n = read(target_in_fd, packet_data, mtu);
             if (n > 0)
