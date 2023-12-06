@@ -5,6 +5,7 @@
 - send version in init packet
 - confirm each N (~10) packets or after ~0.1 s
 - log about change remote IP
+- get curtime as gettimeofday, calculate select timeout in milliseconts
 - packet reordering
 - forward tcp port like "ssh -R" or "ssh -L"
 - sparse data, autorecovery lost packets

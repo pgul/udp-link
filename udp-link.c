@@ -323,7 +323,7 @@ int main(int argc, char *argv[])
     if (init_connection() != 0)
         return 3;
 
-    last_sent = last_received = time(NULL);
+    curtime = last_sent = last_received = time(NULL);
 
     while (1)
     {
@@ -354,7 +354,10 @@ int main(int argc, char *argv[])
                 maxfd = socket_fd;
         }
         /* Assume we always can write to socket */
-        curtime=time(NULL);
+        if (last_sent > curtime)
+            last_sent = curtime;
+        if (last_received > curtime)
+            last_received = curtime;
         if (packet_to_send)
         {
             tm.tv_sec=0;
@@ -362,9 +365,14 @@ int main(int argc, char *argv[])
         }
         else
         {   /* keepalive is mandatory */
-            tm.tv_sec=keepalive_interval-(curtime-last_sent);
-            if (timeout && tm.tv_sec>timeout-(curtime-last_received))
-                tm.tv_sec=timeout-(curtime-last_received);
+            int timeout_sent = keepalive_interval>=curtime-last_sent ? keepalive_interval-(curtime-last_sent) : 0;
+            if (timeout)
+            {
+                int timeout_received = timeout>=curtime-last_received ? timeout-(curtime-last_received) : 0;
+                tm.tv_sec = timeout_sent>timeout_received ? timeout_received : timeout_sent;
+            }
+            else
+                tm.tv_sec = timeout_sent;
             tm.tv_usec=0;
         }
         r = select(maxfd+1, &fd_in, &fd_out, NULL, &tm);
@@ -377,13 +385,14 @@ int main(int argc, char *argv[])
             close(socket_fd);
             return 1;
         }
-        if (curtime-last_received > timeout)
+        curtime = time(NULL);
+        if (curtime > last_received+timeout)
         {
             write_log(LOG_ERR, "Timeout");
             send_msg(MSGTYPE_SHUTDOWN, REASON_TIMEOUT);
             return 1;
         }
-        if (curtime-last_sent > keepalive_interval && !packet_to_send)
+        if (curtime > last_sent+keepalive_interval && !packet_to_send)
             send_msg(MSGTYPE_KEEPALIVE);
         if (FD_ISSET(socket_fd, &fd_in))
         {
