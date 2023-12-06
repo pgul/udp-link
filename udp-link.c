@@ -421,19 +421,18 @@ int main(int argc, char *argv[])
         }
         if ((fds[1].revents & POLLHUP) || (fds[fds_out_ndx].revents & POLLHUP))
         {
-            write_log(LOG_ERR, "target closed");
-            send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+            write_log(LOG_INFO, "target closed (pollhup)");
             buf_out.head = buf_out.tail = 0;
             shutdown_local = 1;
         }
-        if ((fds[1].revents & POLLNVAL) || (fds[fds_out_ndx].revents & POLLNVAL))
+        else if ((fds[1].revents & POLLNVAL) || (fds[fds_out_ndx].revents & POLLNVAL))
         {
             write_log(LOG_ERR, "target invalid");
             send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
             buf_out.head = buf_out.tail = 0;
             shutdown_local = 1;
         }
-        if (fds[fds_out_ndx].revents & POLLOUT)
+        else if (fds[fds_out_ndx].revents & POLLOUT)
         {
             int n = write_buf(target_out_fd, &buf_out);
             if (n < 0)
@@ -444,12 +443,12 @@ int main(int argc, char *argv[])
             }
             if (n == 0)
             {
-                write_log(LOG_ERR, "target closed");
+                write_log(LOG_INFO, "target closed (0 bytes wrote)");
                 buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
         }
-        if (fds[1].revents & POLLIN)
+        if ((fds[1].revents & POLLIN) && !shutdown_local)
         {
             int n = read(target_in_fd, packet_data, mtu);
             if (n > 0)
@@ -468,7 +467,7 @@ int main(int argc, char *argv[])
             }
             else
             {
-                write_log(LOG_INFO, "target closed");
+                write_log(LOG_INFO, "target closed (0 bytes read)");
                 buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
