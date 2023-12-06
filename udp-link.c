@@ -43,6 +43,12 @@ void sigpipe(int signo)
     write_log(LOG_ERR, "SIGPIPE received");
 }
 
+void term_handler(int signo)
+{
+    write_log(LOG_INFO, "SIGTERM received");
+    shutdown_local = 1;
+}
+
 char **split(char *str)
 {
     static char *words[256];
@@ -322,6 +328,8 @@ int main(int argc, char *argv[])
     buf_out.head  = buf_out.tail  = 0;
 
     sigaction(SIGPIPE, &(struct sigaction){.sa_handler=sigpipe, .sa_flags=SA_RESTART}, NULL);
+    signal(SIGTERM, term_handler);
+    signal(SIGINT,  term_handler);
 
     if (init_connection() != 0)
         return 3;
@@ -417,25 +425,20 @@ int main(int argc, char *argv[])
                     shutdown_remote = 1;
                     buf_sent.head = buf_sent.tail = 0;
                 }
-                else if (msgtype == MSGTYPE_DATA && shutdown_local)
-                    /* ignore (purge) received data packets after shutdown */
-                    buf_out.head = buf_out.tail = 0;
             }
         }
         if ((fds[1].revents & POLLHUP) || (fds[fds_out_ndx].revents & POLLHUP))
         {
             write_log(LOG_INFO, "target closed (pollhup)");
-            buf_out.head = buf_out.tail = 0;
             shutdown_local = 1;
         }
         else if ((fds[1].revents & POLLNVAL) || (fds[fds_out_ndx].revents & POLLNVAL))
         {
             write_log(LOG_ERR, "target invalid");
             send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
-            buf_out.head = buf_out.tail = 0;
             shutdown_local = 1;
         }
-        else if (fds[fds_out_ndx].revents & POLLOUT)
+        else if ((fds[fds_out_ndx].revents & POLLOUT) && !shutdown_local)
         {
             int n = write_buf(target_out_fd, &buf_out);
             if (n < 0)
@@ -447,7 +450,6 @@ int main(int argc, char *argv[])
             if (n == 0)
             {
                 write_log(LOG_INFO, "target closed (0 bytes wrote)");
-                buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
         }
@@ -471,7 +473,6 @@ int main(int argc, char *argv[])
             else
             {
                 write_log(LOG_INFO, "target closed (0 bytes read)");
-                buf_out.head = buf_out.tail = 0;
                 shutdown_local = 1;
             }
         }
