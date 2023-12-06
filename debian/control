@@ -1,0 +1,12 @@
+Source: udp-link
+Section: perl
+Priority: optional
+Maintainer: Pavlo Gulchuk <pgul@github.com>
+Build-Depends: debhelper (>= 12), pkg-config, gcc, make
+Standards-Version: 3.7.2
+
+Package: udp-link
+Architecture: any
+Depends: ${shlibs:Depends}, openssh-client
+Description: UDP-link proxy for ssh
+ UDP-link proxy for reliable ssh connection
