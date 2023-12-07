@@ -2,6 +2,7 @@
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
+#include <unistd.h>
 #include <syslog.h>
 #include <ctype.h>
 #include "udp-link.h"
@@ -56,7 +57,7 @@ void write_log(int level, char *format, ...)
   curtm=localtime(&curtime);
   strcpy(stime, asctime(curtm));
   if ((p=strchr(stime, '\n'))!=NULL) *p='\0';
-  fprintf(flog, "%s ", stime);
+  fprintf(flog, "%s [%u] ", stime, getpid());
   switch (level)
   {
     case LOG_CRIT:   fprintf(flog, "CRIT: "); break;
