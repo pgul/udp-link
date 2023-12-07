@@ -295,6 +295,7 @@ int parse_args(int argc, char *argv[])
             return 1;
         }
         target_out_fd = target_in_fd = target_sockfd;
+        write_log(LOG_INFO, "TCP connected to %s %s:%hu", target, inet_ntoa(target_addr.sin_addr), ntohs(target_addr.sin_port));
     }
     else
     {
@@ -320,6 +321,7 @@ int parse_args(int argc, char *argv[])
         }
         memcpy(&remote_addr.sin_addr, remote_host->h_addr_list[0], remote_host->h_length);
         remote_addr.sin_family = AF_INET;
+        write_log(LOG_INFO, "Connecting to UDP %s %s:%hu", remote, inet_ntoa(remote_addr.sin_addr), ntohs(remote_addr.sin_port));
     }
 
     return 0;
