@@ -328,8 +328,11 @@ unsigned int time_ms(void)
     }
     if (tv.tv_sec > tv_start.tv_sec + 30*24*3600)
     {   // We use 32-bit unsigned int for time_ms, so we can't handle more than 30 days
+        int i;
         write_log(LOG_INFO, "Time went forward more than 30 days, restarting");
         memcpy(&tv_start, &tv, sizeof(tv_start));
+        for (i=buf_sent.tail; i!=buf_sent.head; i=(i+1)%buf_sent.size)
+            buf_sent.msgs[i].timestamp = 0;
         return 0;
     }
     if (tv.tv_usec >= tv_start.tv_usec)
