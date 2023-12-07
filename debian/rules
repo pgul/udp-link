@@ -2,3 +2,7 @@
 
 %:
 	dh $@
+
+# No "make install" needed
+override_dh_auto_install:
+	#dh_auto_install
