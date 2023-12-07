@@ -388,7 +388,7 @@ int main(int argc, char *argv[])
     {
         struct pollfd fds[3];
         int fds_out_ndx = target_in_fd == target_out_fd ? 1 : 2;
-        int poll_timeout;
+        int poll_timeout, resend_interval;
         int r;
 
         fds[0].fd = socket_fd;
@@ -410,18 +410,20 @@ int main(int argc, char *argv[])
             last_sent = curtime;
         if (last_received > curtime)
             last_received = curtime;
+
+        resend_interval = RESEND_INTERVAL;
+        poll_timeout = keepalive_interval>=curtime-last_sent ? keepalive_interval-(curtime-last_sent) : 0;
+        if (timeout)
+        {
+            int timeout_received = timeout>=curtime-last_received ? timeout-(curtime-last_received) : 0;
+            poll_timeout = poll_timeout>timeout_received ? timeout_received : poll_timeout;
+        }
         if (packet_to_send || buf_sent.head != buf_sent.tail)
-            poll_timeout = RESEND_INTERVAL;
-        else
-        {   /* keepalive is mandatory */
-            int timeout_sent = keepalive_interval>=curtime-last_sent ? keepalive_interval-(curtime-last_sent) : 0;
-            if (timeout)
-            {
-                int timeout_received = timeout>=curtime-last_received ? timeout-(curtime-last_received) : 0;
-                poll_timeout = timeout_sent>timeout_received ? timeout_received : timeout_sent;
-            }
-            else
-                poll_timeout = timeout_sent;
+        {
+            unsigned int last_timestamp = buf_sent.head != buf_sent.tail ? buf_sent.msgs[buf_sent.head].timestamp : last_received;
+            if (curtime > last_timestamp+PASSIVE_AFTER)
+                resend_interval = RESEND2_INTERVAL;
+            poll_timeout = poll_timeout>resend_interval ? resend_interval : poll_timeout;
         }
         r = poll(fds, fds_out_ndx+1, poll_timeout);
         if (r < 0)
@@ -501,9 +503,9 @@ int main(int argc, char *argv[])
                 shutdown_local = 1;
             }
         }
-        if (buf_sent.head != buf_sent.tail && buf_sent.msgs[buf_sent.tail].timestamp+RESEND_INTERVAL < curtime)
+        if (buf_sent.head != buf_sent.tail && buf_sent.msgs[buf_sent.tail].timestamp+resend_interval < curtime)
         {
-            /* No confirmation for sent packets during RESEND_INTERVAL, resend */
+            /* No confirmation for sent packets during resend_interval, resend */
             int n;
             for (n=buf_sent.tail; n!=buf_sent.head; n=(n+1)%buf_sent.size)
             {
