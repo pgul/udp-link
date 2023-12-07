@@ -99,10 +99,7 @@ int open_socket(short local_port)
     addr.sin_port = htons(local_port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-    {
-        write_log(LOG_ERR, "bind() failed: %s", strerror(errno));
         return -1;
-    }
     return fd;
 }
 

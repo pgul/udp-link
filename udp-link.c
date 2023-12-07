@@ -132,22 +132,31 @@ int parse_args(int argc, char *argv[])
         usage();
         return 1;
     }
+    srand(time(NULL) ^ getpid()); rand();
     if (strcmp(argv[0], "server") == 0)
     {
         if (!argv[1])
         {   fprintf(stderr, "second parameter (key) required for server mode\n");
             return 1;
         }
-        local_port = local_port_min;
         /* bind to free port and output it */
-        for (local_port = local_port_min; local_port <= local_port_max; local_port++)
+        /* first try to bind to local_port_min, and if it's busy, choose from random port from the range */
+        local_port = local_port_min;
+        socket_fd = open_socket(local_port);
+        if (socket_fd == -1 && errno == EADDRINUSE && local_port_min < local_port_max)
         {
-            socket_fd = open_socket(local_port);
-            if (socket_fd >= 0)
-                break;
+            unsigned short start_port = rand()%(local_port_max-local_port_min) + local_port_min;
+            for (local_port = start_port+1; local_port != start_port; local_port++)
+            {
+                if (local_port > local_port_max)
+                    local_port = local_port_min+1;
+                socket_fd = open_socket(local_port);
+                if (socket_fd >= 0 || errno != EADDRINUSE)
+                    break;
+            }
         }
         if (socket_fd < 0)
-        {   fprintf(stderr, "Can't bind to any port in range %d-%d\n", local_port_min, local_port_max);
+        {   fprintf(stderr, "Can't bind to any port in range %d-%d: %s\n", local_port_min, local_port_max, strerror(errno));
             return 1;
         }
 
@@ -168,7 +177,7 @@ int parse_args(int argc, char *argv[])
         key = atoi(argv[1]);
         local_port = local_port_min;
         socket_fd = open_socket(local_port);
-        if (socket_fd < 0)
+        if (socket_fd < 0 || errno == EADDRINUSE)
         {   fprintf(stderr, "Can't bind to any port in range %d-%d\n", local_port_min, local_port_max);
             return 1;
         }
@@ -182,7 +191,6 @@ int parse_args(int argc, char *argv[])
         int rc, i;
         pid_t pid;
 
-        srand(time(NULL) ^ getpid()); rand();
         key = rand();
         rc = pipe(pipe_fd);
         if (rc < 0)
@@ -247,7 +255,7 @@ int parse_args(int argc, char *argv[])
                 break;
         }
         if (socket_fd < 0)
-        {   fprintf(stderr, "Can't bind to any port in range 40000-60000\n");
+        {   fprintf(stderr, "Can't bind to any port in range 40000-60000: %s\n", strerror(errno));
             return 1;
         }
     }
