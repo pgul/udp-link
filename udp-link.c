@@ -415,7 +415,7 @@ int main(int argc, char *argv[])
             fds[1].events |= POLLIN;
         if (buf_out.head != buf_out.tail && !shutdown_local)
             fds[fds_out_ndx].events |= POLLOUT;
-        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !shutdown_remote && !killed)
+        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !packet_to_send && !shutdown_remote && !killed)
             /* we have space for at least one packet */
             fds[0].events |= POLLIN;
         /* Assume we always can write to socket */
@@ -438,7 +438,8 @@ int main(int argc, char *argv[])
                 resend_interval = RESEND2_INTERVAL;
             poll_timeout = poll_timeout>resend_interval ? resend_interval : poll_timeout;
         }
-        r = poll(fds, fds_out_ndx+1, poll_timeout);
+        /* exclude socket_fd from fds if send error to avoid infinite loop with 100% cpu usage */
+        r = poll(fds[0].events ? fds : fds+1, fds_out_ndx+1-(fds[0].events ? 0 : 1), poll_timeout);
         if (r < 0)
         {
             if (errno == EINTR)

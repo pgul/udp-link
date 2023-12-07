@@ -289,7 +289,10 @@ int read_msg(int *msgtype_p)
     sl = sizeof(remote);
     n = recvfrom(socket_fd, databuf, sizeof(databuf), 0, (struct sockaddr *)&remote, &sl);
     if (n == -1)
+    {
+        write_log(LOG_ERR, "recvfrom() failed: %s", strerror(errno));
         return -1;
+    }
     if (n < sizeof(magic))
     {
         write_log(LOG_INFO, "Bad packet, length %u, ignore", n);
