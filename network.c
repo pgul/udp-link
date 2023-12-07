@@ -87,17 +87,11 @@ int open_socket(short local_port)
 {
     int fd;
     struct sockaddr_in addr;
-    int optval = 1;
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0)
     {
         write_log(LOG_ERR, "socket() failed: %s", strerror(errno));
-        return -1;
-    }
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
-    {
-        write_log(LOG_ERR, "setsockopt() failed: %s", strerror(errno));
         return -1;
     }
     memset(&addr, 0, sizeof(addr));
