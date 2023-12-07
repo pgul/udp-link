@@ -29,7 +29,7 @@ It uses UDP port numbers 43200-44000 by default on server side (can be changed w
 Similar applications are [mosh](https://github.com/mobile-shell/mosh), [Eternal Terminal](https://github.com/MisterTea/EternalTerminal) and quicssh.  
 mosh is good, but it emulates terminal and it is not always convenient, for example, it has some problems with scroll-back buffer.
 Eternal Terminal also emulates terminal, works over tcp and is not stable in my case (which is confirmed by open bugreports about crashes after network down and on multiple connections to the same remote host).  
-QUIC protocol was developed exactly for this purpose, but implementations quicssh (go) and quicssh-rs (rust) are not stable on my tests.  
+QUIC protocol was developed exactly for this purpose, but implementations [quicssh](https://github.com/moul/quicssh) (go) and [quicssh-rs](https://github.com/oowl/quicssh-rs) (rust) are not stable on my tests.  
 I did not found any program for this which satisfied me, but spent much time in ssh, often with unstable or changing network, so I decided to create my own ssh proxy for make my ssh connections reliable.  
 May be I'll change UDP-layer to msquic library if found enough reasons for this.
 
