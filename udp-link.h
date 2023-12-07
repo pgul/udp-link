@@ -61,6 +61,7 @@ int  send_data(char *data, int len);
 int  write_buf(int fd, buffer_t *buffer);
 int  read_msg(int *msgtype);
 int  init_connection(void);
+int  udp_ping(void);
 unsigned int time_ms(void);
 char *dump_data(char *buf, int len);
 

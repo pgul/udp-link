@@ -526,6 +526,17 @@ int main(int argc, char *argv[])
         }
         if (buf_sent.head != buf_sent.tail && buf_sent.msgs[(buf_sent.tail+buf_sent.size-1)%buf_sent.size].timestamp+resend_interval < curtime)
         {
+            if (curtime > last_received+PASSIVE_AFTER)
+            {
+                /* check if remote end is alive */
+                /* if it response with "connection refused", then remote agent is dead and we should shutdown */
+                /* if there will be no response, then it can be network problem, and we will continue */
+                if (udp_ping() == -2)
+                {
+                    write_log(LOG_ERR, "Remote end is dead");
+                    return 1;
+                }
+            }
             /* No confirmation for sent packets during resend_interval, resend */
             int n;
             for (n=buf_sent.tail; n!=buf_sent.head; n=(n+1)%buf_sent.size)
