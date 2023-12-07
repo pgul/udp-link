@@ -441,6 +441,7 @@ int udp_ping(void)
     }
     if (rc == 0)
     {
+        write_log(LOG_INFO, "Ping timeout");
         close(sockfd);
         return 0;
     }
@@ -450,11 +451,19 @@ int udp_ping(void)
     if (n < 0)
     {
         if (saved_errno == ECONNREFUSED)
+        {
+            write_log(LOG_INFO, "Ping: port unreachable");
             return -2;
+        }
+        write_log(LOG_ERR, "Ping recv() failed: %s", strerror(saved_errno));
         return -1;
     }
     if (n == 0)
+    {
+        write_log(LOG_INFO, "Ping: connection closed");
         return 0;
+    }
+    write_log(LOG_INFO, "Ping: response received");
     return 1;
 }
 
