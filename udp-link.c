@@ -452,7 +452,7 @@ int main(int argc, char *argv[])
                 continue;
             }
             write_log(LOG_ERR, "Can't poll: %s", strerror(errno));
-            send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+            send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_ERROR);
             close(socket_fd);
             return 1;
         }
@@ -460,11 +460,11 @@ int main(int argc, char *argv[])
         if (curtime > last_received+timeout)
         {
             write_log(LOG_ERR, "Timeout");
-            send_msg(MSGTYPE_SHUTDOWN, REASON_TIMEOUT);
+            send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_TIMEOUT);
             return 1;
         }
         if (curtime > last_sent+keepalive_interval && !packet_to_send)
-        {   send_msg(MSGTYPE_KEEPALIVE);
+        {   send_msg(socket_fd, MSGTYPE_KEEPALIVE);
             last_sent = curtime;
         }
         if (fds[0].revents & POLLNVAL)
@@ -485,7 +485,7 @@ int main(int argc, char *argv[])
             int n = read_msg(&msgtype);
             if (n < 0)
             {
-                send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+                send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             if (n > 0)
@@ -506,7 +506,7 @@ int main(int argc, char *argv[])
         else if ((fds[1].revents & POLLNVAL) || (fds[fds_out_ndx].revents & POLLNVAL))
         {
             write_log(LOG_ERR, "target invalid");
-            send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+            send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_ERROR);
             shutdown_local = 1;
         }
         else if ((fds[fds_out_ndx].revents & POLLOUT) && !shutdown_local)
@@ -515,7 +515,7 @@ int main(int argc, char *argv[])
             if (n < 0)
             {
                 write_log(LOG_ERR, "Can't write to target: %s", strerror(errno));
-                send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+                send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             if (n == 0)
@@ -532,7 +532,7 @@ int main(int argc, char *argv[])
             {
                 if (debug)
                     write_log(LOG_DEBUG, "Resend packet %u", buf_sent.msgs[n].seq);
-                send_msg(MSGTYPE_DATA, buf_sent.msgs[n].seq, buf_sent.msgs[n].len, buf_sent.msgs[n].data);
+                send_msg(socket_fd, MSGTYPE_DATA, buf_sent.msgs[n].seq, buf_sent.msgs[n].len, buf_sent.msgs[n].data);
                 buf_sent.msgs[n].timestamp = curtime;
             }
             /* special case: if local end shutdowned, purge output, b/c connection to remote may be lost */
@@ -553,7 +553,7 @@ int main(int argc, char *argv[])
             else if (n < 0)
             {
                 write_log(LOG_ERR, "Can't read from target: %s", strerror(errno));
-                send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
+                send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_ERROR);
                 return 1;
             }
             else
@@ -576,12 +576,12 @@ int main(int argc, char *argv[])
         }
         if (killed)
         {
-            send_msg(MSGTYPE_SHUTDOWN, REASON_KILLED);
+            send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_KILLED);
             return 2;
         }
         if (shutdown_local && buf_sent.head == buf_sent.tail)
         {
-            send_msg(MSGTYPE_SHUTDOWN, REASON_NORMAL);
+            send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_NORMAL);
             write_log(LOG_INFO, "Normal shutdown");
             return 0;
         }

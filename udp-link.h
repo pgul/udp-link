@@ -6,6 +6,7 @@
 #define PASSIVE_AFTER      60*1000 // 1 min, decrease resend interval after this time
 #define KEEPALIVE_INTERVAL 60*1000 // 1 min
 #define TIMEOUT            18*3600*1000 // 18 hours
+#define PING_TIMEOUT       1000    // ms
 #define BUFSIZE            64      // sent packets waiting for YAK
 #define BUF2SIZE           65536   // bytes, waiting for output to target stream
 #define MTU                1400    // bytes
@@ -22,7 +23,9 @@
 #define MSGTYPE_NAK       4 // yak female
 #define MSGTYPE_KEEPALIVE 5
 #define MSGTYPE_SHUTDOWN  6
-#define MSGTYPE_MAX       6
+#define MSGTYPE_PING      7
+#define MSGTYPE_PONG      8
+#define MSGTYPE_MAX       8
 
 #define REASON_NORMAL  0
 #define REASON_ERROR   1
@@ -53,7 +56,7 @@ typedef struct buffer {
 
 int  open_socket(short port);
 void close_socket(void);
-int  send_msg(int msgtype, ...);
+int  send_msg(int socket_fd, int msgtype, ...);
 int  send_data(char *data, int len);
 int  write_buf(int fd, buffer_t *buffer);
 int  read_msg(int *msgtype);

@@ -10,7 +10,7 @@
 #include <syslog.h>
 #include "udp-link.h"
 
-int send_msg(int msgtype, ...)
+int send_msg(int sockfd, int msgtype, ...)
 {
     va_list ap;
     char sendbuf[MTU];
@@ -75,12 +75,21 @@ int send_msg(int msgtype, ...)
             datalen += sizeof(seq);
             if (debug) write_log(LOG_DEBUG, "Sending nak seq %u", ntohs(seq));
             break;
+        case MSGTYPE_PING:
+            if (debug) write_log(LOG_DEBUG, "Sending ping");
+            break;
+        case MSGTYPE_PONG:
+            if (debug) write_log(LOG_DEBUG, "Sending ping");
+            break;
         default:
             write_log(LOG_INFO, "Unknown message type: %d", msgtype);
             break;
     }
     va_end(ap);
-    return sendto(socket_fd, sendbuf, datalen, 0, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
+    if (sockfd == socket_fd)
+        return sendto(sockfd, sendbuf, datalen, 0, (struct sockaddr *)&remote_addr, sizeof(remote_addr));
+    else
+        return send(sockfd, sendbuf, datalen, 0);
 }
 
 int open_socket(short local_port)
@@ -152,7 +161,7 @@ int send_data(char *data, int len)
     buf_sent.msgs[buf_sent.head].yak = 0;
     buf_sent.msgs[buf_sent.head].timestamp = time_ms();
     buf_sent.head = (buf_sent.head+1)%buf_sent.size;
-    rc = send_msg(MSGTYPE_DATA, seq, len, data);
+    rc = send_msg(socket_fd, MSGTYPE_DATA, seq, len, data);
     if (rc > 0)
         seq++;
     return rc;
@@ -180,13 +189,13 @@ int receive_data(uint16_t seq, char *data, int len)
         if (cmp_seq(seq, recv_seq) > 0)
         {
             write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
-            send_msg(MSGTYPE_NAK, recv_seq);
+            send_msg(socket_fd, MSGTYPE_NAK, recv_seq);
         }
         else
         {
             write_log(LOG_INFO, "Received data packet with seq %u, expected %u, ignored", seq, recv_seq);
             if (seq+1 == recv_seq)
-                send_msg(MSGTYPE_YAK, seq);
+                send_msg(socket_fd, MSGTYPE_YAK, seq);
         }
         return 1;
     }
@@ -204,7 +213,7 @@ int receive_data(uint16_t seq, char *data, int len)
     }
     if (debug)
         write_log(LOG_DEBUG, "Data saved to buffer, new head %u", buf_out.head);
-    send_msg(MSGTYPE_YAK, recv_seq++);
+    send_msg(socket_fd, MSGTYPE_YAK, recv_seq++);
     return 1;
 }
 
@@ -267,7 +276,7 @@ int process_nak(unsigned short seq)
     ndx = (buf_sent.tail + (seq>tail_seq ? seq-tail_seq : seq+0x10000u-tail_seq)) % buf_sent.size;
     do
     {
-        send_msg(MSGTYPE_DATA, buf_sent.msgs[ndx].seq, buf_sent.msgs[ndx].len, buf_sent.msgs[ndx].data);
+        send_msg(socket_fd, MSGTYPE_DATA, buf_sent.msgs[ndx].seq, buf_sent.msgs[ndx].len, buf_sent.msgs[ndx].data);
         ndx = (ndx+1)%buf_sent.size;
     }
     while (ndx != buf_sent.head);
@@ -317,7 +326,7 @@ int read_msg(int *msgtype_p)
                 return -1;
             }
             if (debug) write_log(LOG_DEBUG, "Received init");
-            send_msg(MSGTYPE_INIT2);
+            send_msg(socket_fd, MSGTYPE_INIT2);
             break;
         case MSGTYPE_INIT2:
             if (n != 0)
@@ -389,6 +398,66 @@ int read_msg(int *msgtype_p)
     return rc;
 }
 
+/* return 0 if timeout, 1 if response received, -1 if send error, -2 if port unreachable */
+int udp_ping(void)
+{
+    /* for catch icmp port unreachable we have to create connected socket */
+    /* bind it to another local port - this affects stored our port on remote, but it's not a problem, it will return later */
+    /* we cannot bind to the same local port, because it will be in use by main socket */
+    /* we can close main socket for the check time, but it's not good idea, because we will lost all data in buffer */
+    int sockfd, rc, n, saved_errno;
+    char *buf[MTU];
+    struct pollfd fds[1];
+
+    if (remote_addr.sin_addr.s_addr == 0)
+    {
+        write_log(LOG_ERR, "Remote address is not set");
+        return -1;
+    }
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0)
+    {
+        write_log(LOG_ERR, "socket() failed: %s", strerror(errno));
+        return -1;
+    }
+    if (connect(sockfd, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) < 0)
+    {
+        write_log(LOG_ERR, "connect() failed: %s", strerror(errno));
+        return -1;
+    }
+    if (send_msg(sockfd, MSGTYPE_PING) < 0)
+    {
+        write_log(LOG_ERR, "send() failed: %s", strerror(errno));
+        return -1;
+    }
+    fds[0].fd = sockfd;
+    fds[0].events = POLLIN;
+    rc = poll(fds, 1, PING_TIMEOUT);
+    if (rc < 0)
+    {
+        write_log(LOG_ERR, "poll() failed: %s", strerror(errno));
+        close(sockfd);
+        return -1;
+    }
+    if (rc == 0)
+    {
+        close(sockfd);
+        return 0;
+    }
+    n = recv(sockfd, buf, sizeof(buf), 0);
+    saved_errno = errno;
+    close(sockfd);
+    if (n < 0)
+    {
+        if (saved_errno == ECONNREFUSED)
+            return -2;
+        return -1;
+    }
+    if (n == 0)
+        return 0;
+    return 1;
+}
+
 int init_connection(void)
 {
     /* send MSGTIME_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
@@ -396,7 +465,7 @@ int init_connection(void)
 
     if (remote_addr.sin_addr.s_addr)
     {
-        if (send_msg(MSGTYPE_INIT) < 0)
+        if (send_msg(socket_fd, MSGTYPE_INIT) < 0)
             return -1;
     }
     while (1)
@@ -423,7 +492,7 @@ int init_connection(void)
             }
             if (remote_addr.sin_addr.s_addr)
             {
-                if (send_msg(MSGTYPE_INIT) < 0)
+                if (send_msg(socket_fd, MSGTYPE_INIT) < 0)
                     return -1;
             }
             continue;
