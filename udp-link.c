@@ -132,28 +132,31 @@ int parse_args(int argc, char *argv[])
         usage();
         return 1;
     }
+    if (local_port_max < local_port_min)
+    {
+        fprintf(stderr, "Invalid port range %u-%u\n", local_port_min, local_port_max);
+        return 1;
+    }
     srand(time(NULL) ^ getpid()); rand();
     if (strcmp(argv[0], "server") == 0)
     {
+        unsigned short start_port;
+
         if (!argv[1])
         {   fprintf(stderr, "second parameter (key) required for server mode\n");
             return 1;
         }
         /* bind to free port and output it */
-        /* first try to bind to local_port_min, and if it's busy, choose from random port from the range */
-        local_port = local_port_min;
-        socket_fd = open_socket(local_port);
-        if (socket_fd == -1 && errno == EADDRINUSE && local_port_min < local_port_max)
+        start_port = rand()%(local_port_max-local_port_min+1) + local_port_min;
+        for (local_port = start_port+1;; local_port++)
         {
-            unsigned short start_port = rand()%(local_port_max-local_port_min) + local_port_min;
-            for (local_port = start_port+1; local_port != start_port; local_port++)
-            {
-                if (local_port > local_port_max)
-                    local_port = local_port_min+1;
-                socket_fd = open_socket(local_port);
-                if (socket_fd >= 0 || errno != EADDRINUSE)
-                    break;
-            }
+            if (local_port > local_port_max)
+                local_port = local_port_min;
+            socket_fd = open_socket(local_port);
+            if (socket_fd >= 0 || errno != EADDRINUSE)
+                break;
+            if (local_port == start_port)
+                break;
         }
         if (socket_fd < 0)
         {   fprintf(stderr, "Can't bind to any port in range %d-%d: %s\n", local_port_min, local_port_max, strerror(errno));

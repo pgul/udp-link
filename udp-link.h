@@ -22,6 +22,7 @@
 #define MSGTYPE_NAK       4 // yak female
 #define MSGTYPE_KEEPALIVE 5
 #define MSGTYPE_SHUTDOWN  6
+#define MSGTYPE_MAX       6
 
 #define REASON_NORMAL  0
 #define REASON_ERROR   1

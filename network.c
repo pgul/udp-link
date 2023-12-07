@@ -296,10 +296,15 @@ int read_msg(int *msgtype_p)
         return 0;
     }
     magic = ntohl(*(uint32_t *)databuf);
-    memcpy(&remote_addr, &remote, sizeof(remote_addr));
     n -= sizeof(magic);
     pdata = databuf+sizeof(magic);
     msgtype = magic-key;
+    if (msgtype > MSGTYPE_MAX || msgtype < 0)
+    {
+        write_log(LOG_INFO, "Unknown message type %u (incorrect connection key?), ignore", msgtype);
+        return 0;
+    }
+    memcpy(&remote_addr, &remote, sizeof(remote_addr));
     rc = 1;
     switch (msgtype) {
         case MSGTYPE_INIT:
