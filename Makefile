@@ -8,6 +8,9 @@ all:	udp-link
 clean:
 	rm -f *.o udp-link
 
+install:
+	install -m 755 udp-link /usr/local/bin
+
 udp-link: $(OBJS) Makefile
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
