@@ -24,7 +24,7 @@ Host your.domain
 The program should be installed on both client and server machines (or jump server), but it is not needed to run it as a service.  
 When the program is started, in creates ssh connection to the target host (or to the jump server), generates random connection key, starts the program on the server side, creates udp link protected with this session key and then close ssh connection.
 
-It uses UDP port numbers 43200-44000 by default on server side (can be changed with --bind option), so you should open this port range in your firewall.
+It uses UDP port numbers 43200-44000 by default on server side (can be changed with --bind option), so you should open this port range in your firewall. Also check your ClientAlive* and TCPKeepAlive options in sshd_config on server side. In case of use udp-link it's better to unset them, otherwise server can close connection if it will not receive any packets from client during a minute or so.
 
 Similar applications are [mosh](https://github.com/mobile-shell/mosh), [Eternal Terminal](https://github.com/MisterTea/EternalTerminal) and quicssh.  
 mosh is good, but it emulates terminal and it is not always convenient, for example, it has some problems with scroll-back buffer.
