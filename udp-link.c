@@ -443,7 +443,14 @@ int main(int argc, char *argv[])
         if (r < 0)
         {
             if (errno == EINTR)
+            {
+                if (killed)
+                {
+                    send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_KILLED);
+                    return 2;
+                }
                 continue;
+            }
             write_log(LOG_ERR, "Can't poll: %s", strerror(errno));
             send_msg(MSGTYPE_SHUTDOWN, REASON_ERROR);
             close(socket_fd);
