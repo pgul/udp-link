@@ -7,7 +7,7 @@ This is a simple UDP link layer implementation. It is intended to be used as a s
 ## Usage
 
 ```
-ssh -o ProxyCommand="udp-link %h %p" user@host
+ssh -o ProxyCommand="udp-link %r@%h %p" user@host
 ```
 or in case of connection through a jump server:
 ```
@@ -16,7 +16,7 @@ ssh -o ProxyCommand "udp-link --target=%h:%p jumpserver" user@host
 It is convenient to add this to your ~/.ssh/config:
 ```
 Host your.domain
-    ProxyCommand "udp-link %h %p"
+    ProxyCommand "udp-link %r@%h %p"
 ```
 
 ## Architecture
