@@ -404,12 +404,10 @@ int main(int argc, char *argv[])
         int poll_timeout, resend_interval;
         int r;
 
+        memset(fds, 0, sizeof(fds));
         fds[0].fd = socket_fd;
-        fds[0].events = 0;
         fds[1].fd = target_in_fd;
-        fds[1].events = 0;
         fds[2].fd = target_out_fd;
-        fds[2].events = 0;
 
         if (packet_to_send == 0 && (buf_sent.head+1)%buf_sent.size != buf_sent.tail && !shutdown_remote && !shutdown_local)
             fds[1].events |= POLLIN;
@@ -439,7 +437,13 @@ int main(int argc, char *argv[])
             poll_timeout = poll_timeout>resend_interval ? resend_interval : poll_timeout;
         }
         /* exclude socket_fd from fds if send error to avoid infinite loop with 100% cpu usage */
-        r = poll(fds[0].events ? fds : fds+1, fds_out_ndx+1-(fds[0].events ? 0 : 1), poll_timeout);
+        /* also exclude target_*_fd if it is closed */
+        if (shutdown_local) {
+            r = poll(fds[0].events ? fds : NULL, fds[0].events ? 1 : 0, poll_timeout);
+        }
+        else {
+            r = poll(fds[0].events ? fds : fds+1, fds_out_ndx+1-(fds[0].events ? 0 : 1), poll_timeout);
+        }
         if (r < 0)
         {
             if (errno == EINTR)
