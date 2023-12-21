@@ -241,7 +241,11 @@ int parse_args(int argc, char *argv[])
             return 1;
         }
 
-        target[0] = '\0';
+        if (target[0])
+        {
+            write_log(LOG_INFO, "Target %s", target);
+            target[0] = '\0';
+        }
         p = strchr(argv[0], '@');
         if (p)
             strncpy(remote, p+1, sizeof(remote)-1);
