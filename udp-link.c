@@ -537,8 +537,8 @@ int main(int argc, char *argv[])
             if (curtime > last_received+PASSIVE_AFTER)
             {
                 /* check if remote end is alive */
-                /* if it response with "connection refused", then remote agent is dead and we should shutdown */
-                /* if there will be no response, then it can be network problem, and we will continue */
+                /* if it responds with "connection refused", then remote agent is dead and we should shutdown */
+                /* if there will be no response, then it can be a network problem, and we will continue */
                 if (udp_ping() == -2)
                 {
                     write_log(LOG_ERR, "Remote end is dead");

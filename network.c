@@ -79,7 +79,7 @@ int send_msg(int sockfd, int msgtype, ...)
             if (debug) write_log(LOG_DEBUG, "Sending ping");
             break;
         case MSGTYPE_PONG:
-            if (debug) write_log(LOG_DEBUG, "Sending ping");
+            if (debug) write_log(LOG_DEBUG, "Sending pong");
             break;
         default:
             write_log(LOG_INFO, "Unknown message type: %d", msgtype);
