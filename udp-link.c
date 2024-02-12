@@ -366,6 +366,7 @@ int main(int argc, char *argv[])
     unsigned int keepalive_interval = KEEPALIVE_INTERVAL;
     unsigned int timeout = TIMEOUT;
     unsigned int curtime;
+    sigset_t sigset;
 
     if (parse_args(argc, argv) != 0)
         return 1;
@@ -385,6 +386,13 @@ int main(int argc, char *argv[])
     buf_sent.head = buf_sent.tail = 0;
     buf_recv.head = buf_recv.tail = 0;
     buf_out.head  = buf_out.tail  = 0;
+
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGPIPE);
+    sigaddset(&sigset, SIGTERM);
+    sigaddset(&sigset, SIGINT);
+    sigaddset(&sigset, SIGHUP);
+    sigprocmask(SIG_BLOCK, &sigset, NULL);
 
     sigaction(SIGPIPE, &(struct sigaction){.sa_handler=sigpipe, .sa_flags=SA_RESTART}, NULL);
     signal(SIGTERM, signal_handler);
@@ -440,6 +448,9 @@ int main(int argc, char *argv[])
                 resend_interval = RESEND2_INTERVAL;
             poll_timeout = poll_timeout>resend_interval ? resend_interval : poll_timeout;
         }
+
+        sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+
         /* exclude socket_fd from fds if send error to avoid infinite loop with 100% cpu usage */
         /* also exclude target_*_fd if it is closed */
         if (shutdown_local) {
@@ -448,17 +459,20 @@ int main(int argc, char *argv[])
         else {
             r = poll(fds[0].events ? fds : fds+1, fds_out_ndx+1-(fds[0].events ? 0 : 1), poll_timeout);
         }
+
+        /* block signals to prevent recursive call of non-reentrant functions like write_log() */
+        sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+        if (killed)
+        {
+            send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_KILLED);
+            return 2;
+        }
+
         if (r < 0)
         {
             if (errno == EINTR)
-            {
-                if (killed)
-                {
-                    send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_KILLED);
-                    return 2;
-                }
                 continue;
-            }
             write_log(LOG_ERR, "Can't poll: %s", strerror(errno));
             send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_ERROR);
             close(socket_fd);
