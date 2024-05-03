@@ -10,6 +10,9 @@
 #include <syslog.h>
 #include "udp-link.h"
 
+static uint16_t remote_version = 0;
+static uint16_t local_version;
+
 int send_msg(int sockfd, int msgtype, ...)
 {
     va_list ap;
@@ -33,6 +36,8 @@ int send_msg(int sockfd, int msgtype, ...)
     switch (msgtype) {
         case MSGTYPE_INIT:
             if (debug) write_log(LOG_DEBUG, "Sending init");
+            memcpy(sendbuf + datalen, &local_version, sizeof(local_version));
+            datalen += sizeof(local_version);
             break;
         case MSGTYPE_INIT2:
             if (debug) write_log(LOG_DEBUG, "Sending init2");
@@ -332,7 +337,12 @@ int read_msg(int *msgtype_p)
     rc = 1;
     switch (msgtype) {
         case MSGTYPE_INIT:
-            if (n != 0)
+            if (n == 2)
+            {
+                remote_version = ntohs(*(uint16_t *)pdata);
+                n -= sizeof(remote_version);
+            }
+            else if (n != 0)
             {
                 write_log(LOG_ERR, "Incorrect init packet");
                 return -1;
@@ -484,6 +494,7 @@ int init_connection(void)
     /* send MSGTYPE_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
     /* Answer MSGTYPE_INIT2 on all MSGTYPE_INIT during init stage */
 
+    local_version = htons(VERSION);
     if (remote_addr.sin_addr.s_addr)
     {
         if (send_msg(socket_fd, MSGTYPE_INIT) < 0)
