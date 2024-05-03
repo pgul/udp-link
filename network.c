@@ -180,6 +180,8 @@ int cmp_seq(unsigned short seq1, unsigned short seq2)
 int receive_data(uint16_t seq, char *data, int len)
 {
     static uint16_t recv_seq = 0;
+    static int last_nak_seq = -1;
+
     if (len > mtu)
     {
         write_log(LOG_ERR, "Received packet too long: %d", len);
@@ -188,8 +190,11 @@ int receive_data(uint16_t seq, char *data, int len)
     if (seq != recv_seq) {
         if (cmp_seq(seq, recv_seq) > 0)
         {
-            write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
-            send_msg(socket_fd, MSGTYPE_NAK, recv_seq);
+            if (last_nak_seq != (int)recv_seq) {
+                write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
+                send_msg(socket_fd, MSGTYPE_NAK, recv_seq);
+                last_nak_seq = recv_seq;
+            }
         }
         else
         {
@@ -214,6 +219,7 @@ int receive_data(uint16_t seq, char *data, int len)
     if (debug)
         write_log(LOG_DEBUG, "Data saved to buffer, new head %u", buf_out.head);
     send_msg(socket_fd, MSGTYPE_YAK, recv_seq++);
+    last_nak_seq = -1;
     return 1;
 }
 
