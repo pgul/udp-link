@@ -269,11 +269,17 @@ int process_nak(unsigned short seq)
         write_log(LOG_INFO, "Incorrect (future) NAK seq %u, ignored", seq);
         return 0;
     }
+    /* all packets from tail to seq-1 are confirmed */
+    if (seq != tail_seq)
+    {
+        buf_sent.tail += seq>=tail_seq ? seq-tail_seq : seq+0x10000u-tail_seq;
+        buf_sent.tail %= buf_sent.size;
+    }
     /* resend all packets from the seq to the head */
     if (debug)
         write_log(LOG_DEBUG, "Received NAK, resend packets from %u to %u", seq,
             buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].seq);
-    ndx = (buf_sent.tail + (seq>tail_seq ? seq-tail_seq : seq+0x10000u-tail_seq)) % buf_sent.size;
+    ndx = buf_sent.tail;
     do
     {
         send_msg(socket_fd, MSGTYPE_DATA, buf_sent.msgs[ndx].seq, buf_sent.msgs[ndx].len, buf_sent.msgs[ndx].data);
