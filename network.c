@@ -469,7 +469,7 @@ int udp_ping(void)
 
 int init_connection(void)
 {
-    /* send MSGTIME_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
+    /* send MSGTYPE_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
     /* Answer MSGTYPE_INIT2 on all MSGTYPE_INIT during init stage */
 
     if (remote_addr.sin_addr.s_addr)
