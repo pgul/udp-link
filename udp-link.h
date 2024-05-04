@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <stdint.h>
 #include <sys/time.h>
 
 #define RESEND_INTERVAL    500     // ms
@@ -26,7 +27,8 @@
 #define MSGTYPE_SHUTDOWN  6
 #define MSGTYPE_PING      7
 #define MSGTYPE_PONG      8
-#define MSGTYPE_MAX       8
+#define MSGTYPE_NAK2      9
+#define MSGTYPE_MAX       9
 
 #define REASON_NORMAL  0
 #define REASON_ERROR   1
@@ -34,8 +36,8 @@
 #define REASON_KILLED  3
 
 struct stored_msg {
-    unsigned short int seq;
-    unsigned short int len;
+    uint16_t seq;
+    uint16_t len;
     unsigned int timestamp;
     unsigned int yak;
     char data[MTU];

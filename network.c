@@ -19,7 +19,7 @@ int send_msg(int sockfd, int msgtype, ...)
     char sendbuf[MTU];
     int datalen=0;
     uint32_t magic;
-    uint16_t seq;
+    uint16_t seq, seq2;
     char *data;
     int len;
     unsigned char reason;
@@ -79,6 +79,15 @@ int send_msg(int sockfd, int msgtype, ...)
             memcpy(sendbuf + datalen, &seq, sizeof(seq));
             datalen += sizeof(seq);
             if (debug) write_log(LOG_DEBUG, "Sending nak seq %u", ntohs(seq));
+            break;
+        case MSGTYPE_NAK2:
+            seq = htons(va_arg(ap, unsigned));
+            memcpy(sendbuf + datalen, &seq, sizeof(seq));
+            datalen += sizeof(seq);
+            seq2 = htons(va_arg(ap, unsigned));
+            memcpy(sendbuf + datalen, &seq, sizeof(seq));
+            datalen += sizeof(seq);
+            if (debug) write_log(LOG_DEBUG, "Sending nak2 seq %u-%u", ntohs(seq), ntohs(seq2));
             break;
         case MSGTYPE_PING:
             if (debug) write_log(LOG_DEBUG, "Sending ping");
@@ -173,7 +182,7 @@ int send_data(char *data, int len)
 }
 
 /* seq is resetting after 65546, so we need be careful on comparation */
-int cmp_seq(unsigned short seq1, unsigned short seq2)
+int cmp_seq(uint16_t seq1, uint16_t seq2)
 {
     if (seq1>seq2)
         return seq1-seq2<0x8000u ? 1 : -1;
@@ -195,10 +204,36 @@ int receive_data(uint16_t seq, char *data, int len)
     if (seq != recv_seq) {
         if (cmp_seq(seq, recv_seq) > 0)
         {
-            if (last_nak_seq != (int)recv_seq) {
-                write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
-                send_msg(socket_fd, MSGTYPE_NAK, recv_seq);
-                last_nak_seq = recv_seq;
+            if (remote_version >= 1)
+            {
+                if (buf_recv.head != buf_recv.tail && cmp_seq(seq, buf_recv.msgs[buf_recv.tail].seq) < 0)
+                    buf_recv.head = buf_recv.tail;
+                if ((buf_recv.head+1)%buf_recv.size != buf_recv.tail &&
+                    (buf_recv.head == buf_recv.tail || seq == buf_recv.msgs[(buf_recv.head+buf_recv.size-1)%buf_recv.size].seq+1))
+                {
+                    if (buf_recv.head == buf_recv.tail)
+                    {
+                        write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK2", seq, recv_seq);
+                        send_msg(socket_fd, MSGTYPE_NAK2, recv_seq, seq-1);
+                    }
+                    else
+                        write_log(LOG_DEBUG, "Received data packet with seq %u, save to ahead buffer", seq);
+                    memcpy(buf_recv.msgs[buf_recv.head].data, data, len);
+                    buf_recv.msgs[buf_recv.head].seq = seq;
+                    buf_recv.msgs[buf_recv.head].len = len;
+                    buf_recv.head = (buf_recv.head+1)%buf_recv.size;
+                }
+                else
+                    write_log(LOG_INFO, "Received data packet with seq %u, expected %u, ignored", seq, recv_seq);
+            }
+            else
+            {   /* NAK2 not supported by remote */
+                if (last_nak_seq != (int)recv_seq)
+                {
+                    write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK", seq, recv_seq);
+                    send_msg(socket_fd, MSGTYPE_NAK, recv_seq);
+                    last_nak_seq = recv_seq;
+                }
             }
         }
         else
@@ -223,14 +258,49 @@ int receive_data(uint16_t seq, char *data, int len)
     }
     if (debug)
         write_log(LOG_DEBUG, "Data saved to buffer, new head %u", buf_out.head);
+    /* process ahead buffer */
+    if (buf_recv.head != buf_recv.tail && buf_recv.msgs[buf_recv.tail].seq == recv_seq+1)
+    {
+        do
+        {
+            if (buf_out.head+buf_recv.msgs[buf_recv.tail].len >= buf_out.size)
+            {
+                int n = buf_out.size - buf_out.head;
+                memcpy(buf_out.data+buf_out.head, buf_recv.msgs[buf_recv.tail].data, n);
+                if (dump)
+                    write_log(LOG_DEBUG, "Data from ahead pkt %u saved to buffer, new head %u: %s", buf_recv.tail, 0, dump_data(buf_out.data+buf_out.head, n));
+                else
+                    write_log(LOG_DEBUG, "Data from ahead pkt %u saved to buffer, new head %u", buf_recv.tail, 0);
+                buf_out.head = 0;
+                memcpy(buf_out.data, buf_recv.msgs[buf_recv.tail].data+n, buf_recv.msgs[buf_recv.tail].len-n);
+                if (dump)
+                    write_log(LOG_DEBUG, "Data from ahead pkt %u saved to buffer, new head %u: %s", buf_recv.tail, buf_out.head+buf_recv.msgs[buf_recv.tail].len-n, dump_data(buf_out.data, buf_recv.msgs[buf_recv.tail].len-n));
+                else
+                    write_log(LOG_DEBUG, "Data from ahead pkt %u saved to buffer, new head %u", buf_recv.tail, buf_out.head+buf_recv.msgs[buf_recv.tail].len-n);
+                buf_out.head += buf_recv.msgs[buf_recv.tail].len-n;
+            }
+            else
+            {
+                memcpy(buf_out.data+buf_out.head, buf_recv.msgs[buf_recv.tail].data, buf_recv.msgs[buf_recv.tail].len);
+                if (dump)
+                    write_log(LOG_DEBUG, "Data from ahead pkt %u saved to buffer, new head %u: %s", buf_recv.tail, buf_out.head+buf_recv.msgs[buf_recv.tail].len, dump_data(buf_out.data+buf_out.head, buf_recv.msgs[buf_recv.tail].len));
+                else
+                    write_log(LOG_DEBUG, "Data from ahead pkt %u saved to buffer, new head %u", buf_recv.tail, buf_out.head+buf_recv.msgs[buf_recv.tail].len);
+                buf_out.head += buf_recv.msgs[buf_recv.tail].len;
+            }
+            buf_recv.tail = (buf_recv.tail+1)%buf_recv.size;
+            recv_seq++;
+        }
+        while (buf_recv.head != buf_recv.tail);
+    }
     send_msg(socket_fd, MSGTYPE_YAK, recv_seq++);
     last_nak_seq = -1;
     return 1;
 }
 
-int process_yak(unsigned short seq)
+int process_yak(uint16_t seq)
 {
-    unsigned short tail_seq;
+    uint16_t tail_seq;
     if (buf_sent.head==buf_sent.tail)
     {
         write_log(LOG_INFO, "Incorrect YAK (buffer is empty), ignored");
@@ -252,14 +322,14 @@ int process_yak(unsigned short seq)
         return 0;
     }
     /* all packets from tail to seq are confirmed */
-    buf_sent.tail += seq>tail_seq ? seq-tail_seq+1 : seq+0x10000u-tail_seq+1;
+    buf_sent.tail += seq-tail_seq+1;
     buf_sent.tail %= buf_sent.size;
     return 0;
 }
 
-int process_nak(unsigned short seq)
+int process_nak(uint16_t seq)
 {
-    unsigned short tail_seq;
+    uint16_t tail_seq;
     int ndx;
 
     if (buf_sent.head==buf_sent.tail)
@@ -283,7 +353,7 @@ int process_nak(unsigned short seq)
     /* all packets from tail to seq-1 are confirmed */
     if (seq != tail_seq)
     {
-        buf_sent.tail += seq>=tail_seq ? seq-tail_seq : seq+0x10000u-tail_seq;
+        buf_sent.tail += seq-tail_seq;
         buf_sent.tail %= buf_sent.size;
     }
     /* resend all packets from the seq to the head */
@@ -297,6 +367,49 @@ int process_nak(unsigned short seq)
         ndx = (ndx+1)%buf_sent.size;
     }
     while (ndx != buf_sent.head);
+    return 0;
+}
+
+int process_nak2(uint16_t seq1, uint16_t seq2)
+{
+    uint16_t tail_seq;
+    int ndx;
+
+    if (buf_sent.head==buf_sent.tail)
+    {
+        write_log(LOG_INFO, "Incorrect NAK (buffer is empty) seq %u-%u, ignored", seq1, seq2);
+        return 0;
+    }
+    tail_seq = buf_sent.msgs[buf_sent.tail].seq;
+    if (cmp_seq(tail_seq, seq1) > 0)
+    {
+        /* it's old (obsoleted) nak */
+        write_log(LOG_INFO, "Incorrect (obsoleted) NAK seq %u-%u, ignored", seq1, seq2);
+        return 0;
+    }
+    if (cmp_seq(buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].seq, seq2) < 0)
+    {
+        /* nak from the future (was it rollback?) */
+        write_log(LOG_INFO, "Incorrect (future) NAK seq %u-%u, ignored", seq1, seq2);
+        return 0;
+    }
+    /* all packets from tail to seq1-1 are confirmed */
+    if (seq1 != tail_seq)
+    {
+        buf_sent.tail += seq1-tail_seq;
+        buf_sent.tail %= buf_sent.size;
+    }
+    /* resend all packets from the seq1 to the seq2 */
+    if (debug)
+        write_log(LOG_DEBUG, "Received NAK, resend packets from %u to %u", seq1, seq2);
+    ndx = buf_sent.tail;
+    while (1)
+    {
+        send_msg(socket_fd, MSGTYPE_DATA, buf_sent.msgs[ndx].seq, buf_sent.msgs[ndx].len, buf_sent.msgs[ndx].data);
+        if (buf_sent.msgs[ndx].seq == seq2)
+            break;
+        ndx = (ndx+1)%buf_sent.size;
+    }
     return 0;
 }
 
@@ -409,6 +522,14 @@ int read_msg(int *msgtype_p)
             }
             seq = ntohs(*(uint16_t *)pdata);
             process_nak(seq);
+            break;
+        case MSGTYPE_NAK2:
+            if (n != 2*sizeof(seq))
+            {
+                write_log(LOG_ERR, "Incorrect nak2 packet");
+                return -1;
+            }
+            process_nak2(ntohs(((uint16_t *)pdata)[0]), ntohs(((uint16_t *)pdata)[1]));
             break;
         default:
             write_log(LOG_INFO, "Unknown message type ignored: %u", msgtype);

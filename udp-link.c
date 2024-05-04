@@ -18,7 +18,7 @@
 u_long key;
 int socket_fd;
 unsigned int mtu = MTU-DATA_HEADER_SIZE;
-buf_pkt_t buf_recv; /* currently unused */
+buf_pkt_t buf_recv;
 buf_pkt_t buf_sent;
 buffer_t buf_out;
 struct sockaddr_in remote_addr;
@@ -376,7 +376,7 @@ int main(int argc, char *argv[])
     buf_recv.size = buf_sent.size = BUFSIZE;
     buf_recv.msgs = malloc(buf_recv.size*sizeof(buf_recv.msgs[0]));
     buf_sent.msgs = malloc(buf_sent.size*sizeof(buf_sent.msgs[0]));
-    buf_out.size = BUF2SIZE;
+    buf_out.size = BUF2SIZE + mtu*buf_recv.size; /* reserve space for ahead packets stored in buf_recv */
     buf_out.data = malloc(buf_out.size);
     packet_data = malloc(mtu);
     if (buf_recv.msgs==NULL || buf_sent.msgs==NULL || buf_out.data==NULL || packet_data==NULL)
@@ -425,8 +425,8 @@ int main(int argc, char *argv[])
             fds[1].events |= POLLIN;
         if (buf_out.head != buf_out.tail && !shutdown_local)
             fds[fds_out_ndx].events |= POLLOUT;
-        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size < buf_out.size-mtu && !packet_to_send && !shutdown_remote && !killed)
-            /* we have space for at least one packet */
+        if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size+buf_recv.size*mtu < buf_out.size-mtu && !packet_to_send && !shutdown_remote && !killed)
+            /* we have space for at least one packet in addition to always reserved buf_recv.size*mtu */
             fds[0].events |= POLLIN;
         /* Assume we always can write to socket */
         if (last_sent > curtime)
