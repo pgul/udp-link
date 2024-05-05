@@ -546,7 +546,7 @@ int main(int argc, char *argv[])
                 shutdown_local = 1;
             }
         }
-        if (buf_sent.head != buf_sent.tail && buf_sent.msgs[(buf_sent.tail+buf_sent.size-1)%buf_sent.size].timestamp+resend_interval < curtime)
+        if (buf_sent.head != buf_sent.tail && buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].timestamp+resend_interval < curtime)
         {
             if (curtime > last_received+PASSIVE_AFTER)
             {
