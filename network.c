@@ -211,10 +211,11 @@ int receive_data(uint16_t seq, char *data, int len)
                 if ((buf_recv.head+1)%buf_recv.size != buf_recv.tail &&
                     (buf_recv.head == buf_recv.tail || seq == buf_recv.msgs[(buf_recv.head+buf_recv.size-1)%buf_recv.size].seq+1))
                 {
-                    if (buf_recv.head == buf_recv.tail)
+                    if (last_nak_seq != (int)recv_seq || buf_recv.head == buf_recv.tail)
                     {
                         write_log(LOG_INFO, "Received data packet with seq %u, expected %u, send NAK2", seq, recv_seq);
                         send_msg(socket_fd, MSGTYPE_NAK2, recv_seq, seq-1);
+                        last_nak_seq = recv_seq;
                     }
                     else
                         write_log(LOG_DEBUG, "Received data packet with seq %u, save to ahead buffer", seq);
@@ -401,7 +402,7 @@ int process_nak2(uint16_t seq1, uint16_t seq2)
     }
     /* resend all packets from the seq1 to the seq2 */
     if (debug)
-        write_log(LOG_DEBUG, "Received NAK, resend packets from %u to %u", seq1, seq2);
+        write_log(LOG_DEBUG, "Received NAK2, resend packets from %u to %u", seq1, seq2);
     ndx = buf_sent.tail;
     while (1)
     {
