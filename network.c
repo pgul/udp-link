@@ -85,8 +85,8 @@ int send_msg(int sockfd, int msgtype, ...)
             memcpy(sendbuf + datalen, &seq, sizeof(seq));
             datalen += sizeof(seq);
             seq2 = htons(va_arg(ap, unsigned));
-            memcpy(sendbuf + datalen, &seq, sizeof(seq));
-            datalen += sizeof(seq);
+            memcpy(sendbuf + datalen, &seq2, sizeof(seq2));
+            datalen += sizeof(seq2);
             if (debug) write_log(LOG_DEBUG, "Sending nak2 seq %u-%u", ntohs(seq), ntohs(seq2));
             break;
         case MSGTYPE_PING:
