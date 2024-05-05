@@ -35,7 +35,7 @@ void usage(void)
     printf("Options:\n");
     printf("  -t, --target=IP[:PORT]  target IP address and port, default 127.0.0.1:22\n");
     printf("  -b, --bind=PORT         bind to local port PORT, default %u-%u\n", LOCAL_PORT_MIN, LOCAL_PORT_MAX);
-    printf("  -l, --log=FILE          log to FILE, default write_log\n");
+    printf("  -l, --log=FILE          log to FILE, default syslog\n");
     printf("  -h, --help              display this help and exit\n");
 }
 
