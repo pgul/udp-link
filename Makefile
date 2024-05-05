@@ -9,7 +9,8 @@ clean:
 	rm -f *.o udp-link
 
 install:
-	install -m 755 udp-link /usr/local/bin
+	if [ -d /opt/local/bin ]; then dst_dir=/opt/local/bin; else dst_dir=/usr/local/bin; fi; \
+	install -m 755 udp-link $$dst_dir
 
 udp-link: $(OBJS) Makefile
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
