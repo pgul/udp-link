@@ -1,3 +1,9 @@
+udp-link (0.5) unstable; urgency=low
+
+  * Speedup stream transfer (scp)
+
+ --  <pgul@github.com>  Sun,  5 May 2024 19:54:45 +0000
+
 udp-link (0.4) unstable; urgency=low
 
   * Fix possible 100% CPU load when remote end closed the socket
