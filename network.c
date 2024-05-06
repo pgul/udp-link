@@ -41,13 +41,19 @@ int send_msg(int sockfd, int msgtype, ...)
             break;
         case MSGTYPE_INIT2:
             if (debug) write_log(LOG_DEBUG, "Sending init2");
+            if (remote_version >= 2)
+            {
+                memcpy(sendbuf + datalen, &local_version, sizeof(local_version));
+                datalen += sizeof(local_version);
+            }
             break;
         case MSGTYPE_DATA:
             seq = htons(va_arg(ap, unsigned));
             memcpy(sendbuf + datalen, &seq, sizeof(seq));
             datalen += sizeof(seq);
             len = va_arg(ap, unsigned);
-            if (datalen + len > MTU) {
+            if (datalen + len > MTU)
+            {
                 write_log(LOG_ERR, "Message too long: %d", datalen + len);
                 return -1;
             }
@@ -465,7 +471,12 @@ int read_msg(int *msgtype_p)
             send_msg(socket_fd, MSGTYPE_INIT2);
             break;
         case MSGTYPE_INIT2:
-            if (n != 0)
+            if (n == 2)
+            {
+                remote_version = ntohs(*(uint16_t *)pdata);
+                n -= sizeof(remote_version);
+            }
+            else if (n != 0)
             {
                 write_log(LOG_ERR, "Incorrect init2 packet");
                 return -1;

@@ -16,7 +16,7 @@
 #define DATA_HEADER_SIZE   6       // bytes: magic(4), seq(2)
 #define LOCAL_PORT_MIN     43200
 #define LOCAL_PORT_MAX     44000
-#define VERSION            1
+#define VERSION            2
 
 #define MSGTYPE_INIT      0
 #define MSGTYPE_INIT2     1
