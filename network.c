@@ -95,11 +95,8 @@ int send_msg(int sockfd, int msgtype, ...)
             datalen += sizeof(seq2);
             if (debug) write_log(LOG_DEBUG, "Sending nak2 seq %u-%u", ntohs(seq), ntohs(seq2));
             break;
-        case MSGTYPE_PING:
-            if (debug) write_log(LOG_DEBUG, "Sending ping");
-            break;
-        case MSGTYPE_PONG:
-            if (debug) write_log(LOG_DEBUG, "Sending pong");
+        case MSGTYPE_NOP:
+            if (debug) write_log(LOG_DEBUG, "Sending nop");
             break;
         default:
             write_log(LOG_INFO, "Unknown message type: %d", msgtype);
@@ -453,7 +450,6 @@ int read_msg(int *msgtype_p)
         write_log(LOG_INFO, "Unknown message type %u (incorrect connection key?), ignore", msgtype);
         return 0;
     }
-    memcpy(&remote_addr, &remote, sizeof(remote_addr));
     rc = 1;
     switch (msgtype) {
         case MSGTYPE_INIT:
@@ -543,26 +539,37 @@ int read_msg(int *msgtype_p)
             }
             process_nak2(ntohs(((uint16_t *)pdata)[0]), ntohs(((uint16_t *)pdata)[1]));
             break;
+        case MSGTYPE_NOP:
+            if (n != 0)
+            {
+                write_log(LOG_ERR, "Incorrect nop");
+                return -1;
+            }
+            if (debug) write_log(LOG_DEBUG, "Received nop");
+            rc = 0; /* do not update remote info */
+            break;
         default:
             write_log(LOG_INFO, "Unknown message type ignored: %u", msgtype);
             rc = 0;
             break;
     }
     if (rc > 0 && msgtype_p != NULL)
+    {
+        /* update remote info only by receiving correct messages and not NOP */
+        memcpy(&remote_addr, &remote, sizeof(remote_addr));
         *msgtype_p = msgtype;
+    }
     return rc;
 }
 
 /* return 0 if timeout, 1 if response received, -1 if send error, -2 if port unreachable */
-int udp_ping(void)
+int udp_check_remote(void)
 {
     /* for catch icmp port unreachable we have to create connected socket */
     /* bind it to another local port - this affects stored our port on remote, but it's not a problem, it will return later */
     /* we cannot bind to the same local port, because it will be in use by main socket */
     /* we can close main socket for the check time, but it's not good idea, because we will lost all data in buffer */
-    int sockfd, rc, n, saved_errno;
-    char *buf[MTU];
-    struct pollfd fds[1];
+    int sockfd;
 
     if (remote_addr.sin_addr.s_addr == 0)
     {
@@ -580,46 +587,12 @@ int udp_ping(void)
         write_log(LOG_ERR, "connect() failed: %s", strerror(errno));
         return -1;
     }
-    if (send_msg(sockfd, MSGTYPE_PING) < 0)
+    if (send_msg(sockfd, MSGTYPE_NOP) < 0)
     {
         write_log(LOG_ERR, "send() failed: %s", strerror(errno));
         return -1;
     }
-    fds[0].fd = sockfd;
-    fds[0].events = POLLIN;
-    rc = poll(fds, 1, PING_TIMEOUT);
-    if (rc < 0)
-    {
-        write_log(LOG_ERR, "poll() failed: %s", strerror(errno));
-        close(sockfd);
-        return -1;
-    }
-    if (rc == 0)
-    {
-        write_log(LOG_INFO, "Ping timeout");
-        close(sockfd);
-        return 0;
-    }
-    n = recv(sockfd, buf, sizeof(buf), 0);
-    saved_errno = errno;
-    close(sockfd);
-    if (n < 0)
-    {
-        if (saved_errno == ECONNREFUSED)
-        {
-            write_log(LOG_INFO, "Ping: port unreachable");
-            return -2;
-        }
-        write_log(LOG_ERR, "Ping recv() failed: %s", strerror(saved_errno));
-        return -1;
-    }
-    if (n == 0)
-    {
-        write_log(LOG_INFO, "Ping: connection closed");
-        return 0;
-    }
-    write_log(LOG_INFO, "Ping: response received");
-    return 1;
+    return sockfd;
 }
 
 int init_connection(void)

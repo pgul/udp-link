@@ -4,10 +4,11 @@
 
 #define RESEND_INTERVAL    500     // ms
 #define RESEND2_INTERVAL   10*1000 // 10 s
-#define PASSIVE_AFTER      60*1000 // 1 min, decrease resend interval after this time
+#define PASSIVE_AFTER      60*1000 // 1 min, increase resend interval after this time
 #define KEEPALIVE_INTERVAL 60*1000 // 1 min
+#define CHECK_INTERVAL     90*1000 // 90 seconds, should be more than KEEPALIVE_INTERVAL
+#define CHECK_TIMEOUT      5*1000  // 5 seconds
 #define TIMEOUT            18*3600*1000 // 18 hours
-#define PING_TIMEOUT       1000    // ms
 #define BUFSIZE            64      // sent packets waiting for YAK
 #define BUF2SIZE           65536   // bytes, waiting for output to target stream
 #define MTU                1400    // bytes
@@ -25,8 +26,8 @@
 #define MSGTYPE_NAK       4 // yak female
 #define MSGTYPE_KEEPALIVE 5
 #define MSGTYPE_SHUTDOWN  6
-#define MSGTYPE_PING      7
-#define MSGTYPE_PONG      8
+#define MSGTYPE_NOP       7
+#define MSGTYPE_NOP2      8
 #define MSGTYPE_NAK2      9
 #define MSGTYPE_MAX       9
 
@@ -57,6 +58,8 @@ typedef struct buffer {
     char *data;
 } buffer_t;
 
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
 int  open_socket(short port);
 void close_socket(void);
 int  send_msg(int socket_fd, int msgtype, ...);
@@ -64,7 +67,7 @@ int  send_data(char *data, int len);
 int  write_buf(int fd, buffer_t *buffer);
 int  read_msg(int *msgtype);
 int  init_connection(void);
-int  udp_ping(void);
+int  udp_check_remote(void);
 unsigned int time_ms(void);
 char *dump_data(char *buf, int len);
 
