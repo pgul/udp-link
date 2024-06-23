@@ -361,12 +361,13 @@ unsigned int time_ms(void)
 
 int main(int argc, char *argv[])
 {
-    time_t last_sent, last_received;
+    time_t last_sent, last_received, last_check;
     int packet_to_send = 0;
     char *packet_data;
     unsigned int keepalive_interval = KEEPALIVE_INTERVAL;
     unsigned int timeout = TIMEOUT;
     unsigned int curtime;
+    int fd_check = -1;
     sigset_t sigset;
 
     if (parse_args(argc, argv) != 0)
@@ -408,11 +409,11 @@ int main(int argc, char *argv[])
     if (init_connection() != 0)
         return 3;
 
-    curtime = last_sent = last_received = time_ms();
+    curtime = last_sent = last_received = last_check = time_ms();
 
     while (1)
     {
-        struct pollfd fds[3];
+        struct pollfd fds[4];
         int fds_out_ndx = target_in_fd == target_out_fd ? 1 : 2;
         int poll_timeout, resend_interval;
         int r;
@@ -421,11 +422,13 @@ int main(int argc, char *argv[])
         fds[0].fd = socket_fd;
         fds[1].fd = target_in_fd;
         fds[2].fd = target_out_fd;
+        fds[fds_out_ndx+1].fd = fd_check;
 
         if (packet_to_send == 0 && (buf_sent.head+1)%buf_sent.size != buf_sent.tail && !shutdown_remote && !shutdown_local)
             fds[1].events |= POLLIN;
         if (buf_out.head != buf_out.tail && !shutdown_local)
             fds[fds_out_ndx].events |= POLLOUT;
+        fds[fds_out_ndx+1].events |= POLLIN;
         if ((buf_out.head+buf_out.size-buf_out.tail)%buf_out.size+buf_recv.size*mtu < buf_out.size-mtu && !packet_to_send && !shutdown_remote && !killed)
             /* we have space for at least one packet in addition to always reserved buf_recv.size*mtu */
             fds[0].events |= POLLIN;
@@ -434,6 +437,8 @@ int main(int argc, char *argv[])
             last_sent = curtime;
         if (last_received > curtime)
             last_received = curtime;
+        if (last_check > curtime)
+            last_check = curtime;
 
         resend_interval = RESEND_INTERVAL;
         poll_timeout = keepalive_interval>=curtime-last_sent ? keepalive_interval-(curtime-last_sent) : 0;
@@ -458,7 +463,7 @@ int main(int argc, char *argv[])
             r = poll(fds[0].events ? fds : NULL, fds[0].events ? 1 : 0, poll_timeout);
         }
         else {
-            r = poll(fds[0].events ? fds : fds+1, fds_out_ndx+1-(fds[0].events ? 0 : 1), poll_timeout);
+            r = poll(fds[0].events ? fds : fds+1, fds_out_ndx+(fd_check==-1 ? 1 : 2)-(fds[0].events ? 0 : 1), poll_timeout);
         }
 
         /* block signals to prevent recursive call of non-reentrant functions like write_log() */
@@ -485,6 +490,19 @@ int main(int argc, char *argv[])
             write_log(LOG_ERR, "Timeout");
             send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_TIMEOUT);
             return 1;
+        }
+        if (curtime > last_check + CHECK_TIMEOUT)
+        {
+            close(fd_check);
+            fd_check = -1;
+        }
+        if (curtime > max(last_check, last_received) + CHECK_INTERVAL)
+        {
+            /* check if remote end is alive */
+            /* if it responds with "connection refused", then remote agent is dead and we should shutdown */
+            /* if there will be no response, then it can be a network problem, and we will continue */
+            fd_check = udp_check_remote();
+            last_check = curtime;
         }
         if (curtime > last_sent+keepalive_interval && !packet_to_send)
         {   send_msg(socket_fd, MSGTYPE_KEEPALIVE);
@@ -521,6 +539,23 @@ int main(int argc, char *argv[])
                 }
             }
         }
+        if (fds[fds_out_ndx+1].revents & POLLIN)
+        {
+            char check_buf[MTU];
+            int n = recv(fd_check, check_buf, sizeof(check_buf), 0);
+            if (n < 0)
+            {
+                int saved_errno = errno;
+                close(fd_check);
+                if (saved_errno == ECONNREFUSED)
+                {
+                    fd_check = -1;
+                    write_log(LOG_ERR, "Remote end is dead");
+                    return 1;
+                }
+                write_log(LOG_ERR, "Ping recv() failed: %s", strerror(saved_errno));
+            }
+        }
         if ((fds[1].revents & POLLHUP) || (fds[fds_out_ndx].revents & POLLHUP))
         {
             write_log(LOG_INFO, "target closed (pollhup)");
@@ -549,17 +584,6 @@ int main(int argc, char *argv[])
         }
         if (buf_sent.head != buf_sent.tail && buf_sent.msgs[(buf_sent.head+buf_sent.size-1)%buf_sent.size].timestamp+resend_interval < curtime)
         {
-            if (curtime > last_received+PASSIVE_AFTER)
-            {
-                /* check if remote end is alive */
-                /* if it responds with "connection refused", then remote agent is dead and we should shutdown */
-                /* if there will be no response, then it can be a network problem, and we will continue */
-                if (udp_ping() == -2)
-                {
-                    write_log(LOG_ERR, "Remote end is dead");
-                    return 1;
-                }
-            }
             /* No confirmation for sent packets during resend_interval, resend */
             int n;
             for (n=buf_sent.tail; n!=buf_sent.head; n=(n+1)%buf_sent.size)
