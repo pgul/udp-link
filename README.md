@@ -51,5 +51,5 @@ Tested on Linux (Ubuntu 22.04, amd64 and arm64) and MacOS.
 
 ## License
 
-© 2023 [Pavlo Gulchuk](https://gul.kiev.ua)  
+© 2023-2024 [Pavlo Gulchuk](https://gul.kiev.ua)
 [MIT License](https://github.com/pgul/udp-link/blob/main/LICENSE)

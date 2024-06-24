@@ -1,9 +1,10 @@
-- send version in init packet
+
 - log about change remote IP
 - protect with crc16
 - confirm each N (~10) packets or after ~0.1 s
-- packet reordering
+? packet reordering
 - forward tcp port like "ssh -R" or "ssh -L"
+- option for daemonize
 - send as batches (packet includes previous data, MSGTYPE_MDATA), including resend after timeout or nak
 - crypt magic, generate nonce, check nonce
 - process shutdown only from remote ip (not from new one)
