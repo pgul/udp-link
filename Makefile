@@ -12,6 +12,9 @@ install:
 	if [ -d /opt/local/bin ]; then dst_dir=/opt/local/bin; else dst_dir=/usr/local/bin; fi; \
 	install -m 755 udp-link $$dst_dir
 
+debian-package:
+	/usr/bin/dpkg-buildpackage -us -b
+
 udp-link: $(OBJS) Makefile
 	$(CC) $(CFLAGS) -o $@ $(OBJS)
 
