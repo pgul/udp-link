@@ -491,7 +491,7 @@ int main(int argc, char *argv[])
             send_msg(socket_fd, MSGTYPE_SHUTDOWN, REASON_TIMEOUT);
             return 1;
         }
-        if (curtime > last_check + CHECK_TIMEOUT)
+        if (curtime > last_check+CHECK_TIMEOUT && fd_check >= 0)
         {
             close(fd_check);
             fd_check = -1;
