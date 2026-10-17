@@ -626,7 +626,7 @@ int main(int argc, char *argv[])
         {
             int n = send_data(packet_data, packet_to_send);
             if (n < 0)
-                // try later
+                // no space in buf_sent, try later
                 write_log(LOG_INFO, "Can't send_data: %s", strerror(errno));
             else
             {

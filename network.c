@@ -172,6 +172,14 @@ int send_data(char *data, int len)
 {
     static uint16_t seq = 0;
     int rc;
+
+    if ((buf_sent.head+1)%buf_sent.size == buf_sent.tail)
+    {
+        /* Caller does not read from target while the buffer is full, so this should not happen */
+        write_log(LOG_ERR, "Sent buffer is full, can't send data");
+        errno = ENOBUFS;
+        return -1;
+    }
     memcpy(buf_sent.msgs[buf_sent.head].data, data, len);
     buf_sent.msgs[buf_sent.head].seq = seq;
     buf_sent.msgs[buf_sent.head].len = len;
@@ -179,9 +187,13 @@ int send_data(char *data, int len)
     buf_sent.msgs[buf_sent.head].timestamp = time_ms();
     buf_sent.head = (buf_sent.head+1)%buf_sent.size;
     rc = send_msg(socket_fd, MSGTYPE_DATA, seq, len, data);
-    if (rc > 0)
-        seq++;
-    return rc;
+    /* The packet is stored in buf_sent in any case, so the seq is consumed even if sendto() failed.
+       The packet will be resent by the resend timer; do not let the caller retry it,
+       otherwise the same packet would be stored again on each retry and overflow the buffer. */
+    seq++;
+    if (rc < 0)
+        write_log(LOG_INFO, "Can't send data packet seq %u: %s, will resend later", (unsigned)(seq-1), strerror(errno));
+    return len;
 }
 
 /* seq is resetting after 65546, so we need be careful on comparation */
