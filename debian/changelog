@@ -1,3 +1,15 @@
+udp-link (0.7) unstable; urgency=low
+
+  * Fix busy loop at 100% cpu when sending fails
+  * Store each data packet in buf_sent only once
+  * Use the oldest unconfirmed packet to decide on the long resend interval
+  * Fix remote liveness check
+  * Reply INIT2 to the very first INIT
+  * Make connection setup survive slow links: --init-timeout option
+  * Fix some bugs
+
+ --  <pgul@github.com>  Sat, 17 Oct 2026 21:20:07 +0000
+
 udp-link (0.6) unstable; urgency=low
 
   * Improve logout local end when remote closed
