@@ -350,7 +350,7 @@ unsigned int time_ms(void)
         write_log(LOG_INFO, "Time went forward more than 30 days, restarting");
         memcpy(&tv_start, &tv, sizeof(tv_start));
         for (i=buf_sent.tail; i!=buf_sent.head; i=(i+1)%buf_sent.size)
-            buf_sent.msgs[i].timestamp = 0;
+            buf_sent.msgs[i].timestamp = buf_sent.msgs[i].first_sent = 0;
         return 0;
     }
     if (tv.tv_usec >= tv_start.tv_usec)
@@ -449,8 +449,11 @@ int main(int argc, char *argv[])
         }
         if (packet_to_send || buf_sent.head != buf_sent.tail)
         {
-            unsigned int last_timestamp = buf_sent.head != buf_sent.tail ? buf_sent.msgs[buf_sent.head].timestamp : last_received;
-            if (curtime > last_timestamp+PASSIVE_AFTER)
+            /* Back off to the long resend interval only if the oldest unconfirmed packet has been
+               waiting for PASSIVE_AFTER. buf_sent.msgs[tail].first_sent is its first send time;
+               msgs[head] is the next free slot and holds stale data from an old packet. */
+            unsigned int first_sent = buf_sent.head != buf_sent.tail ? buf_sent.msgs[buf_sent.tail].first_sent : last_received;
+            if (curtime > first_sent+PASSIVE_AFTER)
                 resend_interval = RESEND2_INTERVAL;
             poll_timeout = poll_timeout>resend_interval ? resend_interval : poll_timeout;
         }

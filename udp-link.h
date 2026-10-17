@@ -39,8 +39,8 @@
 struct stored_msg {
     uint16_t seq;
     uint16_t len;
-    unsigned int timestamp;
-    unsigned int yak;
+    unsigned int timestamp;   // time of last send (updated on resend)
+    unsigned int first_sent;  // time of first send (not updated on resend)
     char data[MTU];
 };
 typedef struct buffer_pkt {

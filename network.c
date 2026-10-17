@@ -183,8 +183,8 @@ int send_data(char *data, int len)
     memcpy(buf_sent.msgs[buf_sent.head].data, data, len);
     buf_sent.msgs[buf_sent.head].seq = seq;
     buf_sent.msgs[buf_sent.head].len = len;
-    buf_sent.msgs[buf_sent.head].yak = 0;
     buf_sent.msgs[buf_sent.head].timestamp = time_ms();
+    buf_sent.msgs[buf_sent.head].first_sent = buf_sent.msgs[buf_sent.head].timestamp;
     buf_sent.head = (buf_sent.head+1)%buf_sent.size;
     rc = send_msg(socket_fd, MSGTYPE_DATA, seq, len, data);
     /* The packet is stored in buf_sent in any case, so the seq is consumed even if sendto() failed.
