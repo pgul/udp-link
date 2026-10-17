@@ -476,6 +476,9 @@ int read_msg(int *msgtype_p)
                 return -1;
             }
             if (debug) write_log(LOG_DEBUG, "Received init");
+            /* send_msg() uses remote_addr, which is otherwise set only after this switch;
+               on the very first INIT it is still empty and INIT2 was never sent */
+            memcpy(&remote_addr, &remote, sizeof(remote_addr));
             send_msg(socket_fd, MSGTYPE_INIT2);
             break;
         case MSGTYPE_INIT2:
