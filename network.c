@@ -616,42 +616,49 @@ int init_connection(void)
 {
     /* send MSGTYPE_INIT each RESEND_INIT time until receive MSGTYPE_INIT2 or any other message (in case if INIT2 lost) */
     /* Answer MSGTYPE_INIT2 on all MSGTYPE_INIT during init stage */
+    /* The INIT resend interval doubles on each resend up to RESEND_INIT_MAX, the whole handshake is limited by init_timeout */
+    unsigned int resend_interval = RESEND_INIT;
+    unsigned int next_send = 0;
+    int initiator = remote_addr.sin_addr.s_addr != 0; /* client knows the remote and sends INIT, server only answers */
 
     local_version = htons(VERSION);
-    if (remote_addr.sin_addr.s_addr)
-    {
-        if (send_msg(socket_fd, MSGTYPE_INIT) < 0)
-            return -1;
-    }
     while (1)
     {
         struct pollfd fds[1];
         int r;
-        unsigned int curtime;
+        unsigned int curtime = time_ms();
 
+        if (curtime > init_timeout)
+        {
+            write_log(LOG_ERR, "Timeout waiting for connection");
+            fprintf(stderr, "Timeout waiting for connection\n");
+            return -1;
+        }
+        if (initiator && curtime >= next_send)
+        {
+            if (send_msg(socket_fd, MSGTYPE_INIT) < 0)
+            {
+                /* no network at the moment (e.g. ENETUNREACH), keep trying until init_timeout */
+                write_log(LOG_INFO, "Can't send init: %s, will retry", strerror(errno));
+            }
+            next_send = curtime + resend_interval;
+            if (resend_interval < RESEND_INIT_MAX)
+                resend_interval *= 2;
+        }
         fds[0].fd = socket_fd;
         fds[0].events = POLLIN;
-        r = poll(fds, 1, RESEND_INIT);
+        /* sleep until the next INIT resend, but never past init_timeout */
+        r = poll(fds, 1, (initiator && next_send < init_timeout ? next_send : init_timeout) - curtime);
         if (r < 0)
         {
-            fprintf(stderr, "select() failed: %s", strerror(errno));
+            if (errno == EINTR)
+                continue;
+            write_log(LOG_ERR, "poll() failed: %s", strerror(errno));
+            fprintf(stderr, "poll() failed: %s\n", strerror(errno));
             return -1;
         }
         if (r == 0)
-        {
-            curtime = time_ms();
-            if (curtime > TIMEOUT_INIT)
-            {
-                fprintf(stderr, "Timeout waiting for connection\n");
-                return -1;
-            }
-            if (remote_addr.sin_addr.s_addr)
-            {
-                if (send_msg(socket_fd, MSGTYPE_INIT) < 0)
-                    return -1;
-            }
             continue;
-        }
         if (fds[0].revents & POLLIN)
         {
             int msgtype;

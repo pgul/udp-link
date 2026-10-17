@@ -32,7 +32,8 @@ sudo make install
 
 You should install udp-link on both client and server side. If you have no root permission, it's possible to install it in you home directory. It's not needed to run it as a service.
 
-It uses UDP port numbers 43200-44000 by default on server side (can be changed with --bind option), so you should open this port range in your firewall. Also check your ClientAlive* and TCPKeepAlive options in sshd_config on server side. In case of use udp-link it's better to unset them, otherwise server can close connection if it will not receive any packets from client during a minute or so.
+It uses UDP port numbers 43200-44000 by default on server side (can be changed with --bind option), so you should open this port range in your firewall.
+Connection setup timeout (ssh ConnectTimeout and the udp handshake) is 30 seconds by default and can be changed with --init-timeout option, e.g. `udp-link --init-timeout=60 %r@%h %p` for very slow links. Also check your ClientAlive* and TCPKeepAlive options in sshd_config on server side. In case of use udp-link it's better to unset them, otherwise server can close connection if it will not receive any packets from client during a minute or so.
 
 ## Architecture
 

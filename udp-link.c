@@ -19,6 +19,7 @@
 u_long key;
 int socket_fd;
 unsigned int mtu = MTU-DATA_HEADER_SIZE;
+unsigned int init_timeout = TIMEOUT_INIT; // ms
 buf_pkt_t buf_recv;
 buf_pkt_t buf_sent;
 buffer_t buf_out;
@@ -37,6 +38,7 @@ void usage(void)
     printf("  -t, --target=IP[:PORT]  target IP address and port, default 127.0.0.1:22\n");
     printf("  -b, --bind=PORT         bind to local port PORT, default %u-%u\n", LOCAL_PORT_MIN, LOCAL_PORT_MAX);
     printf("  -l, --log=FILE          log to FILE, default syslog\n");
+    printf("  -T, --init-timeout=SEC  connection setup timeout (ssh ConnectTimeout and udp handshake), default %u\n", TIMEOUT_INIT/1000);
     printf("  -h, --help              display this help and exit\n");
 }
 
@@ -97,10 +99,11 @@ int parse_args(int argc, char *argv[])
         {"debug",  no_argument,       NULL, 'd'},
         {"dump",   no_argument,       NULL, 'D'},
         {"log",    required_argument, NULL, 'l'},
+        {"init-timeout", required_argument, NULL, 'T'},
         {"help",   no_argument,       NULL, 'h'},
         {0, 0, 0, 0 }
     };
-    while ((c = getopt_long(argc, argv, "t:r:b:l:dDh", long_options, NULL)) != EOF)
+    while ((c = getopt_long(argc, argv, "t:r:b:l:T:dDh", long_options, NULL)) != EOF)
     {
         switch (c)
         {
@@ -117,6 +120,12 @@ int parse_args(int argc, char *argv[])
                             local_port_max = local_port_min;
                         break;
             case 'l':   logfile = optarg;
+                        break;
+            case 'T':   init_timeout = atoi(optarg)*1000;
+                        if (init_timeout == 0)
+                        {   fprintf(stderr, "Invalid init timeout %s\n", optarg);
+                            return 1;
+                        }
                         break;
             case 'D':   dump = 1;
             case 'd':   debug = 1;
@@ -213,11 +222,16 @@ int parse_args(int argc, char *argv[])
             str = fgets(rport, sizeof(rport), new_stdin);
             fclose(new_stdin);
             waitpid(pid, &rc, 0);
-            if (rc != 0 || str == NULL)
-            {   fprintf(stderr, "ssh exited with code %d\n", rc);
+            if (str == NULL || atoi(rport) <= 0 || atoi(rport) > 65535)
+            {   fprintf(stderr, "ssh exited with code %d, remote port not received\n", WIFEXITED(rc) ? WEXITSTATUS(rc) : rc);
                 return 1;
             }
-            if (debug) fprintf(stderr, "remote port: %s", rport);
+            /* the port is received, so the remote server is running; a non-zero exit code
+               of ssh at this point (e.g. teardown problem on a bad link) is not fatal */
+            if (rc != 0)
+                fprintf(stderr, "Warning: ssh exited with code %d after remote port was received\n", WIFEXITED(rc) ? WEXITSTATUS(rc) : rc);
+            if ((p = strchr(rport, '\n')) != NULL) *p = '\0';
+            if (debug) fprintf(stderr, "remote port: %s\n", rport);
         }
         else
         {
@@ -227,11 +241,17 @@ int parse_args(int argc, char *argv[])
             dup2(pipe_fd[1], fileno(stdout));
             close(pipe_fd[1]);
             snprintf(ssh_cmd, sizeof(ssh_cmd),
-                "ssh %s-o ConnectTimeout=6 -o ServerAliveInterval=6 -o ServerAliveCountMax=1 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u server %lu",
-                debug ? "-v " : "",
+            /* ConnectTimeout follows --init-timeout. ServerAlive* here only guard against a hung bootstrap
+               session, so they are relaxed enough for slow links: the previous 6s/1 killed ssh on a
+               single delayed reply where plain ssh would have connected.
+               The server waits for the first INIT longer than the client, because the client starts
+               the udp handshake only after ssh has exited, which on a slow link takes a while.
+               The option is passed in --opt=value form, so an older server ignores it with a warning. */
+                "ssh %s-o ConnectTimeout=%u -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u --init-timeout=%u server %lu",
+                debug ? "-v " : "", init_timeout/1000,
                 argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
                 argv[0], debug ? "--debug " : "", target[0] ? target : "127.0.0.1:22",
-                local_port_min, local_port_max, key);
+                local_port_min, local_port_max, init_timeout/1000*SERVER_INIT_FACTOR, key);
             if (debug) fprintf(stderr, "ssh_cmd: %s\n", ssh_cmd);
             new_stdin = fopen("/dev/null", "r");
             dup2(fileno(new_stdin), fileno(stdin));

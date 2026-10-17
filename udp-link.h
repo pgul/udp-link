@@ -12,8 +12,10 @@
 #define BUFSIZE            64      // sent packets waiting for YAK
 #define BUF2SIZE           65536   // bytes, waiting for output to target stream
 #define MTU                1400    // bytes
-#define RESEND_INIT        500     // ms
-#define TIMEOUT_INIT       5*1000  // ms
+#define RESEND_INIT        500     // ms, initial INIT resend interval, doubled on each resend
+#define RESEND_INIT_MAX    4*1000  // ms, max INIT resend interval
+#define TIMEOUT_INIT       30*1000 // ms, default, see --init-timeout
+#define SERVER_INIT_FACTOR 2       // server waits for the first INIT this many times longer than client
 #define DATA_HEADER_SIZE   6       // bytes: magic(4), seq(2)
 #define LOCAL_PORT_MIN     43200
 #define LOCAL_PORT_MAX     44000
@@ -77,6 +79,7 @@ void open_log(char *name, int, int);
 extern int socket_fd;
 extern u_long key;
 extern unsigned int mtu;
+extern unsigned int init_timeout;
 extern buffer_t buf_out;
 extern buf_pkt_t buf_recv, buf_sent;
 extern struct sockaddr_in remote_addr;
