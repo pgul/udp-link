@@ -504,8 +504,10 @@ int main(int argc, char *argv[])
             fd_check = udp_check_remote();
             last_check = curtime;
         }
-        if (curtime > last_sent+keepalive_interval && !packet_to_send)
-        {   send_msg(socket_fd, MSGTYPE_KEEPALIVE);
+        if (curtime > last_sent+keepalive_interval)
+        {   /* Send keepalive even if a data packet is pending (previous send failed, e.g. no network).
+               Otherwise last_sent never advances, poll_timeout becomes 0 and the loop spins at 100% cpu */
+            send_msg(socket_fd, MSGTYPE_KEEPALIVE);
             last_sent = curtime;
         }
         if (fds[0].revents & POLLNVAL)
