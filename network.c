@@ -340,7 +340,7 @@ int process_yak(uint16_t seq)
         return 0;
     }
     /* all packets from tail to seq are confirmed */
-    buf_sent.tail += seq-tail_seq+1;
+    buf_sent.tail += (uint16_t)(seq-tail_seq)+1;
     buf_sent.tail %= buf_sent.size;
     return 0;
 }
@@ -371,7 +371,7 @@ int process_nak(uint16_t seq)
     /* all packets from tail to seq-1 are confirmed */
     if (seq != tail_seq)
     {
-        buf_sent.tail += seq-tail_seq;
+        buf_sent.tail += (uint16_t)(seq-tail_seq);
         buf_sent.tail %= buf_sent.size;
     }
     /* resend all packets from the seq to the head */
@@ -414,7 +414,7 @@ int process_nak2(uint16_t seq1, uint16_t seq2)
     /* all packets from tail to seq1-1 are confirmed */
     if (seq1 != tail_seq)
     {
-        buf_sent.tail += seq1-tail_seq;
+        buf_sent.tail += (uint16_t)(seq1-tail_seq);
         buf_sent.tail %= buf_sent.size;
     }
     /* resend all packets from the seq1 to the seq2 */
