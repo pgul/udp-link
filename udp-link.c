@@ -544,22 +544,27 @@ int main(int argc, char *argv[])
                 }
             }
         }
-        if (fds[fds_out_ndx+1].revents & POLLIN)
+        if (fds[fds_out_ndx+1].revents & (POLLIN|POLLERR|POLLHUP))
         {
+            /* On Linux a pending ICMP error on a connected UDP socket is reported as POLLERR only
+               (POLLIN is not set), so check for it too. The check is finished in any case: close the
+               socket at once, otherwise poll() keeps returning immediately on it until CHECK_TIMEOUT. */
             char check_buf[MTU];
             int n = recv(fd_check, check_buf, sizeof(check_buf), 0);
+            int saved_errno = errno;
+            close(fd_check);
+            fd_check = -1;
             if (n < 0)
             {
-                int saved_errno = errno;
-                close(fd_check);
                 if (saved_errno == ECONNREFUSED)
                 {
-                    fd_check = -1;
                     write_log(LOG_ERR, "Remote end is dead");
                     return 1;
                 }
                 write_log(LOG_ERR, "Ping recv() failed: %s", strerror(saved_errno));
             }
+            else if (debug)
+                write_log(LOG_DEBUG, "Received %d bytes response on check socket", n);
         }
         if ((fds[1].revents & POLLHUP) || (fds[fds_out_ndx].revents & POLLHUP))
         {

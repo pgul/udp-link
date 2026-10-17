@@ -597,11 +597,13 @@ int udp_check_remote(void)
     if (connect(sockfd, (struct sockaddr *)&remote_addr, sizeof(remote_addr)) < 0)
     {
         write_log(LOG_ERR, "connect() failed: %s", strerror(errno));
+        close(sockfd);
         return -1;
     }
     if (send_msg(sockfd, MSGTYPE_NOP) < 0)
     {
         write_log(LOG_ERR, "send() failed: %s", strerror(errno));
+        close(sockfd);
         return -1;
     }
     return sockfd;
