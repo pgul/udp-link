@@ -196,7 +196,9 @@ int send_data(char *data, int len)
     return len;
 }
 
-/* seq is resetting after 65546, so we need be careful on comparation */
+/* seq is resetting after 65535, so we need be careful on comparison.
+   Note: uint16_t operands are promoted to int, so seq+1 is 65536, not 0, after the last seq;
+   every "next seq" expression must be cast back to uint16_t before comparing. */
 int cmp_seq(uint16_t seq1, uint16_t seq2)
 {
     if (seq1>seq2)
@@ -224,7 +226,7 @@ int receive_data(uint16_t seq, char *data, int len)
                 if (buf_recv.head != buf_recv.tail && cmp_seq(seq, buf_recv.msgs[buf_recv.tail].seq) < 0)
                     buf_recv.head = buf_recv.tail;
                 if ((buf_recv.head+1)%buf_recv.size != buf_recv.tail &&
-                    (buf_recv.head == buf_recv.tail || seq == buf_recv.msgs[(buf_recv.head+buf_recv.size-1)%buf_recv.size].seq+1))
+                    (buf_recv.head == buf_recv.tail || seq == (uint16_t)(buf_recv.msgs[(buf_recv.head+buf_recv.size-1)%buf_recv.size].seq+1)))
                 {
                     if (last_nak_seq != (int)recv_seq || buf_recv.head == buf_recv.tail)
                     {
@@ -255,7 +257,7 @@ int receive_data(uint16_t seq, char *data, int len)
         else
         {
             write_log(LOG_INFO, "Received data packet with seq %u, expected %u, ignored", seq, recv_seq);
-            if (seq+1 == recv_seq)
+            if ((uint16_t)(seq+1) == recv_seq)
                 send_msg(socket_fd, MSGTYPE_YAK, seq);
         }
         return 1;
@@ -275,7 +277,7 @@ int receive_data(uint16_t seq, char *data, int len)
     if (debug)
         write_log(LOG_DEBUG, "Data saved to buffer, new head %u", buf_out.head);
     /* process ahead buffer */
-    if (buf_recv.head != buf_recv.tail && buf_recv.msgs[buf_recv.tail].seq == recv_seq+1)
+    if (buf_recv.head != buf_recv.tail && buf_recv.msgs[buf_recv.tail].seq == (uint16_t)(recv_seq+1))
     {
         do
         {
