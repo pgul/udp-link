@@ -90,6 +90,8 @@ int parse_args(int argc, char *argv[])
 {
     int c;
     char target[256]="", remote[256]="", rport[8];
+    char init_opt[32]="";
+    int init_timeout_given = 0;
     char *p;
     unsigned short local_port_min = LOCAL_PORT_MIN, local_port_max = LOCAL_PORT_MAX;
     struct option long_options[] = {
@@ -122,6 +124,7 @@ int parse_args(int argc, char *argv[])
             case 'l':   logfile = optarg;
                         break;
             case 'T':   init_timeout = atoi(optarg)*1000;
+                        init_timeout_given = 1;
                         if (init_timeout == 0)
                         {   fprintf(stderr, "Invalid init timeout %s\n", optarg);
                             return 1;
@@ -156,6 +159,10 @@ int parse_args(int argc, char *argv[])
         {   fprintf(stderr, "second parameter (key) required for server mode\n");
             return 1;
         }
+        /* server waits for the first INIT longer than the client does, see SERVER_INIT_FACTOR;
+           the client passes an explicit --init-timeout only when it was given on its command line */
+        if (!init_timeout_given)
+            init_timeout *= SERVER_INIT_FACTOR;
         /* bind to free port and output it */
         start_port = rand()%(local_port_max-local_port_min+1) + local_port_min;
         for (local_port = start_port+1;; local_port++)
@@ -240,18 +247,23 @@ int parse_args(int argc, char *argv[])
             close(pipe_fd[0]);
             dup2(pipe_fd[1], fileno(stdout));
             close(pipe_fd[1]);
+            if (init_timeout != TIMEOUT_INIT)
+                snprintf(init_opt, sizeof(init_opt), "--init-timeout=%u ", init_timeout/1000*SERVER_INIT_FACTOR);
             snprintf(ssh_cmd, sizeof(ssh_cmd),
             /* ConnectTimeout follows --init-timeout. ServerAlive* here only guard against a hung bootstrap
                session, so they are relaxed enough for slow links: the previous 6s/1 killed ssh on a
                single delayed reply where plain ssh would have connected.
                The server waits for the first INIT longer than the client, because the client starts
                the udp handshake only after ssh has exited, which on a slow link takes a while.
-               The option is passed in --opt=value form, so an older server ignores it with a warning. */
-                "ssh %s-o ConnectTimeout=%u -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u --init-timeout=%u server %lu",
+               --init-timeout is passed only if it differs from the default: the server applies the factor
+               to its own default itself, and an older server that does not know the option prints an
+               error for it, so with the default value nothing is sent. It is passed in --opt=value form, so even an
+               older server only warns and still starts. */
+                "ssh %s-o ConnectTimeout=%u -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o ProxyCommand=none %s%s %s udp-link %s--target %s --bind %u-%u %sserver %lu",
                 debug ? "-v " : "", init_timeout/1000,
                 argv[1] ? "-p " : "", argv[1] ? argv[1] : "",
                 argv[0], debug ? "--debug " : "", target[0] ? target : "127.0.0.1:22",
-                local_port_min, local_port_max, init_timeout/1000*SERVER_INIT_FACTOR, key);
+                local_port_min, local_port_max, init_opt, key);
             if (debug) fprintf(stderr, "ssh_cmd: %s\n", ssh_cmd);
             new_stdin = fopen("/dev/null", "r");
             dup2(fileno(new_stdin), fileno(stdin));
